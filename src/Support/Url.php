@@ -51,7 +51,11 @@ class Url
     {
         $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
             || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        // Atrás de proxy HTTPS (Caddy/Nginx): o WebSocket passa pelo mesmo host em /ws
+        if ($https) {
+            return 'wss://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ws';
+        }
         $host = parse_url('//' . ($_SERVER['HTTP_HOST'] ?? 'localhost'), PHP_URL_HOST) ?: 'localhost';
-        return ($https ? 'wss://' : 'ws://') . $host . ':' . $port;
+        return 'ws://' . $host . ':' . $port;
     }
 }

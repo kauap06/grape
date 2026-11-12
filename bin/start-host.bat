@@ -92,6 +92,28 @@ start "Grape HTTP (8080)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" -S 0.0.0.0:8080
 REM WebSocket server on 0.0.0.0:8081
 start "Grape WebSocket (8081)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" server/websocket-server.php > "%PROJECT_DIR%\logs\websocket.log" 2>&1"
 
+REM HTTPS (Caddy) - necessario para camera, microfone e compartilhamento de tela via Radmin VPN
+REM Detecta o IP do Radmin VPN (26.x.x.x) automaticamente
+set RADMIN_IP=
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '26.*' } | Select-Object -First 1).IPAddress"`) do set RADMIN_IP=%%i
+if not defined RADMIN_IP (
+    echo AVISO: IP do Radmin VPN nao encontrado ^(26.x.x.x^). Abra e conecte o Radmin VPN.
+    echo HTTPS sera iniciado apenas para https://localhost
+    set RADMIN_IP=localhost
+)
+
+REM Caddy instalado via webi fica em %USERPROFILE%\.local\bin
+set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+set CADDY_STARTED=0
+where caddy >nul 2>&1
+if errorlevel 1 (
+    echo AVISO: Caddy nao encontrado. Sem HTTPS, camera/microfone/tela nao funcionam para convidados.
+    echo Instale com: curl.exe https://webi.ms/caddy ^| powershell
+) else (
+    start "Grape HTTPS (Caddy)" /D "%PROJECT_DIR%" cmd /c "caddy run --config deploy\Caddyfile > logs\caddy.log 2>&1"
+    set CADDY_STARTED=1
+)
+
 REM Give servers time to start
 timeout /t 3 /nobreak >nul
 
@@ -123,8 +145,8 @@ echo   Home page:     http://localhost:8080
 echo   WebSocket:     ws://localhost:8081
 echo.
 echo Radmin VPN access (other users in the same VPN network):
-echo   Home page:     http://<HOST_VPN_IP>:8080
-echo   WebSocket:     ws://<HOST_VPN_IP>:8081
+echo   Home page:     https://%RADMIN_IP%   ^(use este: libera camera, microfone e tela^)
+echo   ^(aceitar o aviso de certificado na primeira vez^)
 echo.
 echo How to find the host's Radmin VPN IPv4 address:
 echo   1. Open Command Prompt
@@ -135,9 +157,10 @@ echo.
 echo Logs:
 echo   HTTP:       %PROJECT_DIR%\logs\http.log
 echo   WebSocket:  %PROJECT_DIR%\logs\websocket.log
+echo   HTTPS:      %PROJECT_DIR%\logs\caddy.log
 echo.
 echo Services run in separate windows titled:
-echo   "Grape HTTP (8080)" and "Grape WebSocket (8081)"
+echo   "Grape HTTP (8080)", "Grape WebSocket (8081)" and "Grape HTTPS (Caddy)"
 echo.
 echo To stop: close each service window (or press Ctrl+C inside them).
 echo ============================================

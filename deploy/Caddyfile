@@ -1,0 +1,19 @@
+# Grape - HTTPS local via Caddy (para câmera, microfone e compartilhamento de tela)
+# O IP do Radmin VPN vem da variável RADMIN_IP (detectada por bin\start-https.bat).
+# Uso recomendado: bin\start-https.bat
+# Manual: set RADMIN_IP=26.x.x.x && caddy run --config deploy\Caddyfile
+# Os convidados acessam: https://<IP do Radmin>  (aceitar o aviso de certificado uma vez)
+
+https://{$RADMIN_IP:localhost}, https://localhost {
+    tls internal
+
+    # WebSocket de sinalização
+    handle /ws* {
+        reverse_proxy localhost:8081
+    }
+
+    # Site PHP (php -S 0.0.0.0:8080)
+    handle {
+        reverse_proxy localhost:8080
+    }
+}

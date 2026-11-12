@@ -109,6 +109,18 @@ let timerHandle = null;
 let selfCameraCache = null; // { track, stream }
 const blockedMedia = new Set(); // elementos cujo autoplay foi bloqueado
 
+// Verifica se a API MediaDevices está disponível (requer contexto seguro: HTTPS ou localhost)
+const hasMediaDevices = !!navigator.mediaDevices;
+const hasScreenShare = hasMediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function';
+
+// Mensagem explicando o motivo real quando a API não existe
+function mediaUnavailableMessage(what) {
+  if (!window.isSecureContext) {
+    return `${what} exige conexão segura. Acesse o site por HTTPS (ou localhost).`;
+  }
+  return `${what} não é suportado neste navegador. Tente Chrome, Edge ou Firefox atualizados fora de navegadores embutidos (Discord, Instagram etc.).`;
+}
+
 // Janela separada (nativa do sistema) com vídeo e tela
 const popout = {
   mode: null,     // 'document' | 'video' | null
@@ -1140,6 +1152,18 @@ async function initializeLocalMedia() {
   const devicePrefs = Storage.get('devices', {});
   const prefs = Storage.get('profile', {});
 
+  if (!hasMediaDevices) {
+    Toast.error(mediaUnavailableMessage('O acesso à câmera e ao microfone'));
+    state.localStream = new MediaStream();
+    state.media.microphoneMuted = true;
+    state.media.cameraMuted = true;
+    updateMediaButtons();
+    syncAllPeers();
+    broadcastMediaState();
+    renderAll();
+    return;
+  }
+
   try {
     const constraints = await Devices.getConstraints(true, true, {
       width: 1280,
@@ -1175,7 +1199,6 @@ async function initializeLocalMedia() {
   } catch (e) {
     Logger.error('Failed to initialize local media:', e);
     Toast.error(`Erro ao acessar mídia: ${escapeHtml(e.message)}`);
-    // Sem microfone ainda dá para ligar a câmera depois
     state.localStream = new MediaStream();
     state.media.microphoneMuted = true;
   }
@@ -1306,6 +1329,11 @@ function stopCamera() {
 }
 
 async function startCamera() {
+  if (!hasMediaDevices) {
+    Toast.error(mediaUnavailableMessage('A câmera'));
+    return;
+  }
+
   const constraints = await Devices.getConstraints(true, false, {
     width: 1280,
     height: 720,
@@ -1331,6 +1359,11 @@ async function toggleScreenShare() {
 }
 
 async function startScreenShare() {
+  if (!hasScreenShare) {
+    Toast.error(mediaUnavailableMessage('O compartilhamento de tela'));
+    return;
+  }
+
   let stream;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({
@@ -2260,7 +2293,7 @@ function cleanup() {
     state.ws = null;
   }
 
-  navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+  navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
 }
 
 // ============================================
