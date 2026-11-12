@@ -1821,6 +1821,9 @@ function showSidePanel(panel) {
     state.chatUnread = 0;
     updateChatBadge();
     elements.chatInput?.focus();
+  } else {
+    // Saiu do chat: permite que novas mensagens voltem a mostrar o indicador.
+    state.chatViewed = false;
   }
 }
 
