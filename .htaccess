@@ -1,0 +1,13 @@
+# Gaming Calls - Raiz do projeto (Apache/XAMPP)
+# O ideal é apontar o DocumentRoot para /public. Se o projeto estiver direto em
+# htdocs/gaming-calls, este arquivo encaminha tudo para a pasta public/ e
+# bloqueia o acesso às pastas internas.
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(config|src|database|server|vendor|deploy|bin|docs|logs)(/|$) - [F,L]
+    RewriteRule ^$ public/ [L]
+    RewriteCond %{REQUEST_URI} !^/?public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

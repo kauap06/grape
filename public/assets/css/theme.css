@@ -1,0 +1,100 @@
+/**
+ * Grape - tema compartilhado (home + sala)
+ * Remapeia os tokens semânticos de main.css; os componentes não usam cor fixa.
+ * Ative com <body class="theme-grape">.
+ */
+
+.theme-grape {
+  --color-bg-primary: #0b0717;
+  --color-bg-secondary: #17122b;
+  --color-bg-tertiary: #1d1736;
+  --color-bg-hover: #271f47;
+  --color-bg-active: #31275a;
+
+  --color-border-subtle: rgba(196, 170, 255, 0.14);
+  --color-border-default: rgba(196, 170, 255, 0.24);
+  --color-border-strong: rgba(196, 170, 255, 0.4);
+  --color-border-focus: #c9a6ff;
+
+  --color-text-primary: #f6f1ff;
+  --color-text-secondary: #cfc5ea;
+  --color-text-muted: #a89fc8;
+
+  --color-accent-primary: #8a3fe0;
+  --color-accent-primary-hover: #9d52f0;
+  --color-accent-fg: #ffffff;
+  --color-accent-secondary: #5fd9a8;
+  --color-online: #4ee3a0;
+
+  --color-brand-1: #b24ff0;
+  --color-brand-2: #5b22c4;
+  --color-glass: rgba(24, 14, 52, 0.58);
+  --color-glass-edge: rgba(190, 140, 255, 0.34);
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  background:
+    radial-gradient(44rem 30rem at 50% 0%, rgba(120, 60, 230, 0.35), transparent 70%),
+    var(--color-bg-primary);
+}
+
+.theme-grape ::selection { background: rgba(167, 112, 255, 0.4); }
+.theme-grape .preference-item input[type="checkbox"] { accent-color: var(--color-brand-1); }
+
+/* ---------- Fundo vivo ---------- */
+.deco { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.blob { position: absolute; display: block; filter: blur(2px); }
+.blob-tl {
+  width: 58vw; max-width: 720px; height: 34vw; max-height: 420px; left: -16vw; top: -18vw;
+  background: linear-gradient(135deg, #b876f0 0%, #6a30d0 100%);
+  border-radius: 58% 42% 62% 38% / 46% 60% 40% 54%; transform: rotate(-8deg);
+  opacity: .55;
+}
+.blob-tr {
+  width: 30vw; max-width: 420px; height: 26vw; max-height: 360px; right: -16vw; top: 6vh;
+  background: linear-gradient(200deg, #6a30d0, #2a1068);
+  border-radius: 50% 50% 40% 60% / 60% 40% 60% 40%; opacity: .4;
+}
+.blob-br {
+  width: 54vw; max-width: 680px; height: 28vw; max-height: 360px; right: -14vw; bottom: -16vw;
+  background: linear-gradient(315deg, #a95bf0 0%, #5a24bf 100%);
+  border-radius: 40% 60% 35% 65% / 58% 42% 58% 42%; transform: rotate(-6deg);
+  opacity: .5;
+}
+.deco-grapes { position: absolute; left: -2vw; bottom: -4vh; width: clamp(130px, 15vw, 240px); height: auto; filter: drop-shadow(0 8px 20px rgba(120, 60, 220, 0.35)); opacity: .9; }
+
+/* Na sala o fundo é mais discreto para não competir com o vídeo */
+.theme-room .deco { opacity: .5; }
+.theme-room .deco-grapes { display: none; }
+
+/* ---------- Botões, campos, modal e toast (compartilhados) ---------- */
+.theme-grape .btn { min-height: 44px; border-radius: var(--radius-full); padding: 0 var(--space-lg); }
+.theme-grape .btn svg { width: 18px; height: 18px; }
+.theme-grape .btn-primary {
+  background: linear-gradient(135deg, #9d52f0, #7a32e6);
+  box-shadow: 0 8px 20px -8px rgba(120, 50, 220, 0.6);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+.theme-grape .btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, #ab63f2, #8a3fe0); box-shadow: 0 10px 24px -8px rgba(120, 50, 220, 0.7); }
+.theme-grape .btn-primary:active:not(:disabled) { transform: translateY(1px); }
+.theme-grape .btn-secondary { background: rgba(170, 110, 255, 0.12); border-color: rgba(190, 150, 255, 0.35); }
+.theme-grape .btn-secondary:hover:not(:disabled) { background: rgba(170, 110, 255, 0.22); }
+.theme-grape .form-input:focus,
+.theme-grape .form-select:focus { border-color: var(--color-border-focus); box-shadow: 0 0 0 3px rgba(167, 112, 255, 0.2); }
+.theme-grape .form-select { background-color: rgba(8, 4, 22, 0.6); }
+.theme-grape .modal-overlay { background: rgba(8, 5, 18, 0.78); }
+.theme-grape .modal { background: #17122b; border-color: var(--color-border-default); box-shadow: 0 20px 48px -16px rgba(5, 0, 20, 0.7); }
+.theme-grape .toast { background: #1d1736; border-color: var(--color-border-default); }
+
+/* Ícones decorativos via CSS: os scripts trocam o conteúdo dos botões (spinner/texto) */
+.btn-arrow::after, .btn-create::before {
+  content: ""; width: 20px; height: 20px; flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+.btn-arrow { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E"); }
+.btn-create { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
+.btn-create:disabled::before { display: none; }

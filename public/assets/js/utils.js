@@ -1,0 +1,401 @@
+/**
+ * Gaming Calls Platform - Shared Utilities
+ */
+
+// ============================================
+// Configuration
+// ============================================
+window.APP_CONFIG = window.APP_CONFIG || {};
+
+// ============================================
+// Logger
+// ============================================
+const Logger = {
+  enabled: true,
+  
+  log(...args) {
+    if (this.enabled || window.APP_CONFIG.debug) {
+      console.log('[GamingCalls]', new Date().toISOString(), ...args);
+    }
+  },
+  
+  debug(...args) {
+    if (this.enabled || window.APP_CONFIG.debug) {
+      console.debug('[GamingCalls]', new Date().toISOString(), ...args);
+    }
+  },
+  
+  warn(...args) {
+    console.warn('[GamingCalls]', new Date().toISOString(), ...args);
+  },
+  
+  error(...args) {
+    console.error('[GamingCalls]', new Date().toISOString(), ...args);
+  },
+  
+  setDebug(enabled) {
+    this.enabled = enabled;
+  }
+};
+
+// ============================================
+// Event Emitter
+// ============================================
+class EventEmitter {
+  constructor() {
+    this.events = new Map();
+  }
+  
+  on(event, listener) {
+    if (!this.events.has(event)) {
+      this.events.set(event, new Set());
+    }
+    this.events.get(event).add(listener);
+    return () => this.off(event, listener);
+  }
+  
+  off(event, listener) {
+    const listeners = this.events.get(event);
+    if (listeners) {
+      listeners.delete(listener);
+    }
+  }
+  
+  emit(event, ...args) {
+    const listeners = this.events.get(event);
+    if (listeners) {
+      listeners.forEach(listener => {
+        try {
+          listener(...args);
+        } catch (e) {
+          Logger.error(`Error in event listener for ${event}:`, e);
+        }
+      });
+    }
+  }
+  
+  once(event, listener) {
+    const wrapper = (...args) => {
+      this.off(event, wrapper);
+      listener(...args);
+    };
+    this.on(event, wrapper);
+  }
+}
+
+// ============================================
+// Toast Notifications
+// ============================================
+const Toast = {
+  container: null,
+  
+  init() {
+    this.container = document.getElementById('toast-container');
+    if (!this.container) {
+      this.container = document.createElement('div');
+      this.container.id = 'toast-container';
+      this.container.className = 'toast-container';
+      document.body.appendChild(this.container);
+    }
+  },
+  
+  show(message, type = 'info', duration = 4000) {
+    if (!this.container) this.init();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <span class="toast-dot" aria-hidden="true"></span>
+      <div class="toast-content">${message}</div>
+      <button class="toast-close" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    `;
+    
+    toast.querySelector('.toast-close').addEventListener('click', () => {
+      this.remove(toast);
+    });
+    
+    this.container.appendChild(toast);
+    
+    if (duration > 0) {
+      setTimeout(() => this.remove(toast), duration);
+    }
+    
+    return toast;
+  },
+  
+  remove(toast) {
+    toast.style.animation = 'slideIn 0.3s ease reverse';
+    setTimeout(() => toast.remove(), 300);
+  },
+  
+  success(message, duration) { return this.show(message, 'success', duration); },
+  error(message, duration) { return this.show(message, 'error', duration); },
+  warning(message, duration) { return this.show(message, 'warning', duration); },
+  info(message, duration) { return this.show(message, 'info', duration); }
+};
+
+// ============================================
+// Modal Manager
+// ============================================
+const Modal = {
+  open(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      // Focus first focusable element
+      const focusable = modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable) focusable.focus();
+    }
+  },
+  
+  close(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  },
+  
+  closeAll() {
+    document.querySelectorAll('.modal-overlay.active').forEach(modal => {
+      modal.classList.remove('active');
+    });
+    document.body.style.overflow = '';
+  },
+  
+  init() {
+    // Close on overlay click
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal-overlay')) {
+        this.close(e.target.id);
+      }
+    });
+    
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.closeAll();
+      }
+    });
+    
+    // Close buttons
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('.modal-close')) {
+        const modal = e.target.closest('.modal-overlay');
+        if (modal) this.close(modal.id);
+      }
+    });
+  }
+};
+
+// ============================================
+// Local Storage Helpers
+// ============================================
+const Storage = {
+  prefix: 'gaming_calls_',
+  
+  get(key, defaultValue = null) {
+    try {
+      const item = localStorage.getItem(this.prefix + key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  },
+  
+  set(key, value) {
+    try {
+      localStorage.setItem(this.prefix + key, JSON.stringify(value));
+      return true;
+    } catch (e) {
+      Logger.error('Storage set error:', e);
+      return false;
+    }
+  },
+  
+  remove(key) {
+    try {
+      localStorage.removeItem(this.prefix + key);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  
+  clear() {
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith(this.prefix))
+        .forEach(k => localStorage.removeItem(k));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
+// ============================================
+// API Helper
+// ============================================
+const API = {
+  baseUrl: window.APP_CONFIG.baseUrl || '',
+  
+  async request(endpoint, options = {}) {
+    const url = `${this.baseUrl}${endpoint}`;
+    const config = {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': window.APP_CONFIG.csrfToken || '',
+        ...options.headers
+      },
+      credentials: 'same-origin',
+      ...options
+    };
+    
+    if (config.body && typeof config.body === 'object') {
+      config.body = JSON.stringify(config.body);
+    }
+    
+    try {
+      const response = await fetch(url, config);
+      const data = await response.json().catch(() => ({}));
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      
+      return data;
+    } catch (error) {
+      Logger.error(`API error (${endpoint}):`, error);
+      throw error;
+    }
+  },
+  
+  get(endpoint) { return this.request(endpoint, { method: 'GET' }); },
+  post(endpoint, data) { return this.request(endpoint, { method: 'POST', body: data }); },
+  put(endpoint, data) { return this.request(endpoint, { method: 'PUT', body: data }); },
+  delete(endpoint) { return this.request(endpoint, { method: 'DELETE' }); }
+};
+
+// ============================================
+// Device Helpers
+// ============================================
+const Devices = {
+  async enumerate() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return {
+        cameras: devices.filter(d => d.kind === 'videoinput'),
+        microphones: devices.filter(d => d.kind === 'audioinput'),
+        speakers: devices.filter(d => d.kind === 'audiooutput')
+      };
+    } catch (e) {
+      Logger.error('Device enumeration failed:', e);
+      return { cameras: [], microphones: [], speakers: [] };
+    }
+  },
+  
+  async getConstraints(video = true, audio = true, options = {}) {
+    const constraints = {};
+    
+    if (video) {
+      constraints.video = {
+        width: { ideal: options.width || 1280, max: options.maxWidth || 1920 },
+        height: { ideal: options.height || 720, max: options.maxHeight || 1080 },
+        frameRate: { ideal: options.frameRate || 30, max: options.maxFrameRate || 60 },
+        facingMode: options.facingMode || 'user',
+        ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {})
+      };
+    }
+    
+    if (audio) {
+      constraints.audio = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 48000,
+        channelCount: 2,
+        ...(options.audioDeviceId ? { deviceId: { exact: options.audioDeviceId } } : {})
+      };
+    }
+    
+    return constraints;
+  },
+  
+  populateSelect(selectElement, devices, currentDeviceId = null) {
+    const placeholder = selectElement.querySelector('option[value=""]');
+    selectElement.innerHTML = '';
+    if (placeholder) selectElement.appendChild(placeholder);
+    
+    devices.forEach(device => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.textContent = device.label || `Dispositivo ${device.deviceId.slice(0, 8)}...`;
+      if (device.deviceId === currentDeviceId) option.selected = true;
+      selectElement.appendChild(option);
+    });
+  }
+};
+
+// ============================================
+// Utility Functions
+// ============================================
+const Utils = {
+  generateId(prefix = '') {
+    return prefix + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+  },
+  
+  formatDuration(seconds) {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  },
+  
+  formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  },
+  
+  debounce(fn, delay) {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => fn.apply(this, args), delay);
+    };
+  },
+  
+  throttle(fn, limit) {
+    let inThrottle;
+    return (...args) => {
+      if (!inThrottle) {
+        fn.apply(this, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    };
+  },
+  
+  clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  },
+  
+  lerp(start, end, t) {
+    return start + (end - start) * t;
+  }
+};
+
+// ============================================
+// Export for modules
+// ============================================
+export { Logger, EventEmitter, Toast, Modal, Storage, API, Devices, Utils };

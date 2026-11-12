@@ -1,0 +1,39 @@
+# Gaming Calls WebSocket Server - Systemd Service
+# Install: sudo cp gaming-calls-ws.service /etc/systemd/system/
+# Enable: sudo systemctl enable gaming-calls-ws
+# Start: sudo systemctl start gaming-calls-ws
+
+[Unit]
+Description=Gaming Calls WebSocket Signaling Server
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/gaming-calls
+ExecStart=/usr/bin/php /var/www/gaming-calls/server/websocket-server.php
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gaming-calls-ws
+
+# Environment
+Environment=APP_ENV=production
+Environment=PHP_INI_SCAN_DIR=/etc/php/8.2/fpm/conf.d
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/gaming-calls/logs
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
