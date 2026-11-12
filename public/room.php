@@ -140,6 +140,10 @@ $joinUrl = $room->getJoinUrl(Url::absolute());
                         Tela
                         <i class="live-pip" aria-hidden="true"></i>
                     </button>
+                    <button class="view-tab" role="tab" id="view-tab-grid" data-view="grid" aria-selected="false" aria-label="Todos os participantes" title="Ver todos os participantes">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                        <span class="view-tab-label">Participantes</span>
+                    </button>
                 </div>
 
                 <button class="popout-btn" id="popout-btn" type="button" title="Janela flutuante (P)" aria-label="Abrir em janela flutuante" aria-pressed="false" hidden>
@@ -167,6 +171,7 @@ $joinUrl = $room->getJoinUrl(Url::absolute());
                 <button type="button" class="cam-restore" id="cam-restore" data-action="show-camera" aria-label="Mostrar câmera" title="Mostrar câmera" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                 </button>
+                <div class="stage-grid" id="stage-grid" aria-label="Participantes da sala"></div>
                 <div class="stage-none" id="stage-none">
                     <p>Selecione um participante para ver o que ele está transmitindo.</p>
                 </div>

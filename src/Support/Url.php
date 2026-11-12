@@ -46,16 +46,34 @@ class Url
 
     /**
      * URL do servidor WebSocket (ws:// ou wss:// conforme o protocolo da página).
+     *
+     * Em localhost, sempre usa a porta explícita (ex.: ws://localhost:8081),
+     * porque o servidor WebSocket (Ratchet) escuta na porta 8081 e não é
+     * proxyado pelo Apache. Em hosts remotos atrás de proxy HTTPS (Caddy/Nginx),
+     * o WebSocket pode ser acessado pelo próprio host no caminho /ws.
      */
     public static function websocket(int $port = 8081): string
     {
         $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
             || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+
+        // Remove porta do host, se houver, para obter apenas o hostname
+        $hostOnly = parse_url('//' . $host, PHP_URL_HOST) ?: 'localhost';
+
+        $isLocalhost = $hostOnly === 'localhost' || $hostOnly === '127.0.0.1';
+
+        // Em localhost o servidor WebSocket (Ratchet) só aceita ws:// (sem SSL).
+        // Nunca use wss:// em localhost, mesmo que a página esteja carregada via HTTPS.
+        if ($isLocalhost) {
+            return 'ws://' . $hostOnly . ':' . $port;
+        }
+
         // Atrás de proxy HTTPS (Caddy/Nginx): o WebSocket passa pelo mesmo host em /ws
         if ($https) {
-            return 'wss://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ws';
+            return 'wss://' . $hostOnly . '/ws';
         }
-        $host = parse_url('//' . ($_SERVER['HTTP_HOST'] ?? 'localhost'), PHP_URL_HOST) ?: 'localhost';
-        return 'ws://' . $host . ':' . $port;
+
+        return 'ws://' . $hostOnly . ':' . $port;
     }
 }

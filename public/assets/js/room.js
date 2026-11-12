@@ -84,6 +84,7 @@ const state = {
   view: {
     sessionId: null,
     tab: 'camera', // camera | screen
+    grid: false, // visão em blocos de todos os participantes
     split: false, // câmera e tela lado a lado
     manual: false, // o usuário já escolheu alguém?
     tabPref: new Map() // sessionId -> aba escolhida manualmente
@@ -255,6 +256,8 @@ function cacheElements() {
   elements.viewTabs = $('view-tabs');
   elements.viewTabCamera = $('view-tab-camera');
   elements.viewTabScreen = $('view-tab-screen');
+  elements.viewTabGrid = $('view-tab-grid');
+  elements.stageGrid = $('stage-grid');
   elements.fullscreenBtn = $('fullscreen-btn');
   elements.popoutBtn = $('popout-btn');
   elements.popinBtn = $('popin-btn');
@@ -347,6 +350,8 @@ function setupEventListeners() {
     if (action === 'toggle-screen') toggleScreenShare();
     if (action === 'hide-camera') setCamHidden(true);
     if (action === 'show-camera') setCamHidden(false);
+    const block = e.target.closest('[data-grid-select]');
+    if (block) selectParticipant(block.dataset.gridSelect);
   });
   elements.fullscreenBtn?.addEventListener('click', toggleFullscreen);
   elements.popoutBtn?.addEventListener('click', togglePopout);
@@ -660,7 +665,7 @@ function saveSettings() {
 // WebSocket Connection
 // ============================================
 function initializeWebSocket() {
-  const wsUrl = window.APP_CONFIG?.wsUrl || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.hostname}:8081`;
+  const wsUrl = window.APP_CONFIG?.wsUrl || `ws://${location.hostname}:8081`;
   updateConnectionStatus('connecting');
 
   try {
@@ -1293,7 +1298,7 @@ function updateAudioActivity() {
   if (changed) {
     state.audioActive = nowActive;
     renderParticipants();
-    if (state.view.sessionId) renderStage();
+    if (state.view.sessionId || state.view.grid) renderStage();
   }
 
   requestAnimationFrame(updateAudioActivity);
@@ -1695,7 +1700,10 @@ function selectParticipant(sessionId, { tab, manual = true } = {}) {
   }
 
   state.view.sessionId = sessionId;
-  if (manual) state.view.manual = true;
+  if (manual) {
+    state.view.manual = true;
+    state.view.grid = false; // escolher alguém sai da visão em blocos
+  }
 
   if (tab) {
     state.view.tab = tab;
@@ -1710,15 +1718,24 @@ function selectParticipant(sessionId, { tab, manual = true } = {}) {
 }
 
 function setViewTab(tab) {
+  if (tab === 'grid') {
+    state.view.grid = true;
+    renderAll(); // a lista da esquerda deixa de marcar alguém
+    return;
+  }
   const id = state.view.sessionId;
   if (!id) return;
+  const leavingGrid = state.view.grid;
+  state.view.grid = false;
   state.view.tab = tab;
   state.view.tabPref.set(id, tab);
-  renderStage();
+  if (leavingGrid) renderAll();
+  else renderStage();
 }
 
 function toggleSplit() {
   state.view.split = !state.view.split;
+  state.view.grid = false;
   Storage.set('roomView', { split: state.view.split });
   updateMediaButtons();
   renderStage();
@@ -1747,9 +1764,34 @@ function renderStage() {
   // Na janela flutuante não há lado a lado: mostra uma coisa por vez
   const split = view.split && popout.mode !== 'document';
 
-  elements.stage.classList.toggle('is-empty', !participant);
-  elements.stage.classList.toggle('split', split);
-  elements.viewTabs.classList.toggle('is-hidden', split || !participant);
+  const grid = !!view.grid && state.participants.size > 0;
+
+  elements.stage.classList.toggle('is-empty', !participant && !grid);
+  elements.stage.classList.toggle('is-grid', grid);
+  elements.stage.classList.toggle('split', split && !grid);
+  elements.viewTabs.classList.toggle('is-hidden', state.participants.size === 0);
+  // Vídeo/Tela só fazem sentido com alguém selecionado e fora do lado a lado
+  const showKindTabs = !!participant && !split;
+  elements.viewTabCamera.hidden = !showKindTabs;
+  elements.viewTabScreen.hidden = !showKindTabs;
+  elements.viewTabGrid.setAttribute('aria-selected', String(grid));
+
+  if (grid) {
+    elements.viewingName.textContent = 'Todos os participantes';
+    if (popout.nameEl) popout.nameEl.textContent = elements.viewingName.textContent;
+    elements.viewingAvatar.innerHTML = '';
+    elements.viewingAvatar.style.cssText = '';
+    elements.viewingAvatar.classList.remove('audio-active');
+    [elements.viewTabCamera, elements.viewTabScreen].forEach(el => el.setAttribute('aria-selected', 'false'));
+    elements.camRestore.hidden = true;
+    ['camera', 'screen'].forEach(kind => {
+      const p = elements.panes[kind];
+      p.pane.hidden = true;
+      if (p.video.srcObject) p.video.srcObject = null;
+    });
+    renderGrid();
+    return;
+  }
 
   if (!participant) {
     elements.viewingName.textContent = '—';
@@ -1816,6 +1858,36 @@ function renderStage() {
   });
 
   positionFloatingCamera();
+}
+
+// ---- Visão em blocos (aba Participantes) -----------------------------------
+function renderGrid() {
+  if (!elements.stageGrid) return;
+  elements.stageGrid.innerHTML = state.order.map(id => {
+    const p = state.participants.get(id);
+    if (!p) return '';
+    const isSelf = id === state.sessionId;
+    const flags = flagsOf(id);
+    const peer = state.peers.get(id);
+    const speaking = state.audioActive.has(id);
+    const locallyMuted = !!peer?.localMuted;
+    const micIcon = locallyMuted ? ICONS.volumeOff : (flags.deafened ? ICONS.headphonesOff : (flags.mic ? ICONS.mic : ICONS.micOff));
+    const micMuted = locallyMuted || flags.deafened || !flags.mic;
+    const name = escapeHtml(p.display_name || 'Jogador') + (isSelf ? ' (você)' : '');
+
+    const status = [];
+    if (flags.camera) status.push(`<span class="is-live">${ICONS.camera}Câmera</span>`);
+    if (flags.screen) status.push(`<span class="is-live">${ICONS.screen}Tela</span>`);
+    if (!status.length) status.push('<span>Somente áudio</span>');
+
+    return `
+      <button type="button" class="grid-block" data-grid-select="${escapeAttr(id)}" aria-label="Ver ${escapeAttr(p.display_name || 'Jogador')}">
+        <span class="grid-mic ${micMuted ? 'muted' : ''}">${micIcon}</span>
+        ${avatarHtml(p, speaking ? 'audio-active' : '')}
+        <span class="grid-name">${name}</span>
+        <span class="grid-status">${status.join('')}</span>
+      </button>`;
+  }).join('');
 }
 
 // ---- Câmera flutuante (arrastável) ----------------------------------------
@@ -1917,7 +1989,7 @@ function renderParticipants() {
     const isSelf = id === state.sessionId;
     const flags = flagsOf(id);
     const peer = state.peers.get(id);
-    const active = id === state.view.sessionId;
+    const active = !state.view.grid && id === state.view.sessionId; // na visão em blocos ninguém fica marcado
 
     let sub;
     let live = false;
@@ -2396,6 +2468,7 @@ function refreshStageMedia() {
 }
 
 function setPopoutView(view) {
+  state.view.grid = false;
   if (view === 'split') {
     state.view.split = true;
   } else {
