@@ -357,6 +357,40 @@ function setupEventListeners() {
   // (exigido por navegadores antes de permitir processamento de áudio).
   document.addEventListener('click', ensureAudioContextRunning, { once: true });
   document.addEventListener('keydown', ensureAudioContextRunning, { once: true });
+
+  // Menu overflow do dock (mais opções)
+  const dockMoreBtn = document.getElementById('dock-more-btn');
+  const dockOverflowMenu = document.getElementById('dock-overflow-menu');
+  if (dockMoreBtn && dockOverflowMenu) {
+    dockMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = !dockOverflowMenu.hidden;
+      dockOverflowMenu.hidden = open;
+      dockMoreBtn.setAttribute('aria-expanded', String(!open));
+    });
+    document.addEventListener('click', (e) => {
+      if (!dockOverflowMenu.hidden && !dockOverflowMenu.contains(e.target) && e.target !== dockMoreBtn) {
+        dockOverflowMenu.hidden = true;
+        dockMoreBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    // Conectar itens do overflow às ações existentes
+    document.getElementById('overflow-layout')?.addEventListener('click', () => {
+      dockOverflowMenu.hidden = true;
+      dockMoreBtn.setAttribute('aria-expanded', 'false');
+      toggleSplit();
+    });
+    document.getElementById('overflow-settings')?.addEventListener('click', () => {
+      dockOverflowMenu.hidden = true;
+      dockMoreBtn.setAttribute('aria-expanded', 'false');
+      Modal.open('settings-modal');
+    });
+    document.getElementById('overflow-invite')?.addEventListener('click', () => {
+      dockOverflowMenu.hidden = true;
+      dockMoreBtn.setAttribute('aria-expanded', 'false');
+      copyInviteLink();
+    });
+  }
 }
 
 function handleKeyboardShortcuts(e) {
@@ -1817,6 +1851,17 @@ function sendChatMessage(e) {
   e.preventDefault();
   const message = elements.chatInput?.value.trim();
   if (!message) return;
+
+  // Exibe a própria mensagem imediatamente (atualização otimista). O servidor
+  // distribui para os demais participantes mas não envia de volta ao remetente,
+  // evitando que a mensagem apareça duas vezes no chat de quem enviou.
+  appendChatMessage({
+    displayName: state.displayName || 'Você',
+    avatar: state.avatar,
+    content: message,
+    timestamp: new Date(),
+    own: true,
+  });
 
   // Envia ao servidor de sinalização, que distribui para todos os participantes
   // da mesma sala. O remetente não é notificado (evita duplicar a própria msg).
