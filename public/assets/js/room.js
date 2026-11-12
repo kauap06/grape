@@ -267,6 +267,7 @@ function cacheElements() {
 
   elements.toggleMicBtn = $('toggle-mic-btn');
   elements.toggleDeafenBtn = $('toggle-deafen-btn');
+  elements.toggleNotifBtn = $('toggle-notif-btn');
   elements.toggleCameraBtn = $('toggle-camera-btn');
   elements.toggleScreenBtn = $('toggle-screen-btn');
   elements.dockInviteBtn = $('dock-invite-btn');
@@ -345,6 +346,8 @@ function setupEventListeners() {
   // Controles
   elements.toggleMicBtn?.addEventListener('click', toggleMicrophone);
   elements.toggleDeafenBtn?.addEventListener('click', toggleDeafen);
+  elements.toggleNotifBtn?.addEventListener('click', toggleNotifications);
+  updateNotifButton();
   elements.toggleCameraBtn?.addEventListener('click', toggleCamera);
   elements.toggleScreenBtn?.addEventListener('click', toggleScreenShare);
   elements.dockInviteBtn?.addEventListener('click', copyInviteLink);
@@ -682,7 +685,7 @@ function handleParticipantJoined(payload) {
     renderAll();
   }
 
-  Toast.info(`${escapeHtml(payload.display_name)} entrou na sala`);
+  notifyRoom(`${escapeHtml(payload.display_name)} entrou na sala`);
 }
 
 function handleParticipantLeft(payload) {
@@ -701,7 +704,7 @@ function handleParticipantLeft(payload) {
     renderAll();
   }
 
-  if (participant) Toast.info(`${escapeHtml(participant.display_name)} saiu da sala`);
+  if (participant) notifyRoom(`${escapeHtml(participant.display_name)} saiu da sala`);
 }
 
 function handleParticipantsList(payload) {
@@ -726,10 +729,10 @@ function handleMediaStateChanged(payload) {
   const after = flagsOf(sessionId);
   if (sessionId !== state.sessionId) {
     if (!before.screen && after.screen) {
-      Toast.info(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+      notifyRoom(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
       playNotificationSound('screen.mp3');
     } else if (before.screen && !after.screen) {
-      Toast.info(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+      notifyRoom(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
     }
   }
 
@@ -1950,9 +1953,35 @@ function sendChatMessage(e) {
   elements.chatInput.value = '';
 }
 
+// Notificações da sala (avisos no canto + sons) podem ser silenciadas pelo botão do sino
+let notificationsMuted = Storage.get('notificationsMuted', false) === true;
+
+function updateNotifButton() {
+  const btn = elements.toggleNotifBtn;
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', String(notificationsMuted));
+  const label = notificationsMuted ? 'Reativar notificações da sala' : 'Silenciar notificações da sala';
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
+}
+
+function toggleNotifications() {
+  notificationsMuted = !notificationsMuted;
+  Storage.set('notificationsMuted', notificationsMuted);
+  updateNotifButton();
+  Toast.info(notificationsMuted ? 'Notificações da sala silenciadas' : 'Notificações da sala reativadas');
+}
+
+// Aviso no canto da tela; não aparece quando as notificações estão silenciadas
+function notifyRoom(message, duration, options) {
+  if (notificationsMuted) return;
+  Toast.info(message, duration, options);
+}
+
 // Sons das notificações (carregados sob demanda, um Audio por arquivo)
 const notificationSounds = {};
 function playNotificationSound(file = 'notification.mp3') {
+  if (notificationsMuted) return;
   try {
     let audio = notificationSounds[file];
     if (!audio) {
@@ -1994,7 +2023,7 @@ function handleChatMessage(payload) {
   // Notificação toast de nova mensagem (exibe remetente, foto e conteúdo truncado)
   if (!isOwn) {
     const truncated = message.length > 60 ? message.slice(0, 60) + '…' : message;
-    Toast.info(truncated, 8000, { title: displayName || 'Participante', avatar: avatarData });
+    notifyRoom(truncated, 8000, { title: displayName || 'Participante', avatar: avatarData });
     playNotificationSound();
   }
 
