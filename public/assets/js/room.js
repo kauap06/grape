@@ -727,6 +727,7 @@ function handleMediaStateChanged(payload) {
   if (sessionId !== state.sessionId) {
     if (!before.screen && after.screen) {
       Toast.info(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+      playNotificationSound('screen.mp3');
     } else if (before.screen && !after.screen) {
       Toast.info(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
     }
@@ -1392,6 +1393,9 @@ async function startScreenShare() {
   state.screenStream = stream;
   state.media.screenShare = true;
 
+  // Quem compartilha também ouve o som de aviso
+  playNotificationSound('screen.mp3');
+
   // O botão "Parar compartilhamento" do navegador também encerra
   const screenVideoTrack = stream.getVideoTracks()[0];
   if (screenVideoTrack) {
@@ -1911,10 +1915,22 @@ function updateChatBadge() {
 // ============================================
 // Chat
 // ============================================
+// Intervalo mínimo entre uma mensagem e a próxima (anti-spam)
+const CHAT_COOLDOWN_MS = 3000;
+let lastChatSentAt = 0;
+
 function sendChatMessage(e) {
   e.preventDefault();
   const message = elements.chatInput?.value.trim();
   if (!message) return;
+
+  // Anti-spam: exige 3 segundos entre mensagens (o texto fica no campo)
+  const wait = CHAT_COOLDOWN_MS - (Date.now() - lastChatSentAt);
+  if (wait > 0) {
+    Toast.warning(`Aguarde ${Math.ceil(wait / 1000)}s para enviar outra mensagem.`);
+    return;
+  }
+  lastChatSentAt = Date.now();
 
   // Exibe a própria mensagem imediatamente (atualização otimista). O servidor
   // distribui para os demais participantes mas não envia de volta ao remetente,
@@ -1932,6 +1948,24 @@ function sendChatMessage(e) {
   sendWebSocketMessage('chat-message', { message });
 
   elements.chatInput.value = '';
+}
+
+// Sons das notificações (carregados sob demanda, um Audio por arquivo)
+const notificationSounds = {};
+function playNotificationSound(file = 'notification.mp3') {
+  try {
+    let audio = notificationSounds[file];
+    if (!audio) {
+      audio = new Audio((window.APP_CONFIG?.baseUrl || '') + '/assets/sound/' + file);
+      audio.preload = 'auto';
+      notificationSounds[file] = audio;
+    }
+    audio.currentTime = 0;
+    // O navegador pode bloquear o autoplay antes da primeira interação; ignora o erro
+    audio.play().catch(() => {});
+  } catch (e) {
+    Logger.warn('Notification sound failed:', e);
+  }
 }
 
 /**
@@ -1961,6 +1995,7 @@ function handleChatMessage(payload) {
   if (!isOwn) {
     const truncated = message.length > 60 ? message.slice(0, 60) + '…' : message;
     Toast.info(truncated, 8000, { title: displayName || 'Participante', avatar: avatarData });
+    playNotificationSound();
   }
 
   appendChatMessage({

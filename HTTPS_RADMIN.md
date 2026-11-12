@@ -26,6 +26,7 @@ Convidado ──https://26.x.x.x──▶ Caddy (443) ──/ws──▶ WebSock
 | `Url.php` | `src/Support/Url.php` | substitui o existente |
 | `start-host.bat` | `bin/start-host.bat` | substitui o existente |
 | `Caddyfile` | `deploy/Caddyfile` | novo |
+| `liberar-permissoes.bat` | `deploy/liberar-permissoes.bat` | novo (opcional) |
 | `HTTPS_RADMIN.md` | `docs/HTTPS_RADMIN.md` | novo (este guia) |
 
 ### O que cada alteração faz
@@ -64,6 +65,33 @@ Convidado ──https://26.x.x.x──▶ Caddy (443) ──/ws──▶ WebSock
 5. Na primeira vez, o navegador mostra um aviso de certificado. Clique em **Avançado → Continuar**.
    Isso é normal: o certificado é gerado localmente pelo Caddy.
 6. Para parar, feche as três janelas.
+
+## Liberar permissões automaticamente (opcional)
+
+O script `deploy/liberar-permissoes.bat` grava políticas do Chrome e do Edge no registro do Windows. Com elas, câmera e microfone
+são liberados sem a pergunta do navegador para o endereço do host. Rode **uma vez em cada PC** (o seu e o de cada convidado):
+
+1. Clique com o botão direito em `liberar-permissoes.bat` e escolha **Executar como administrador**.
+2. Digite o IP do Radmin do host (ex.: `26.12.34.56`).
+3. Feche **todas** as janelas do navegador e abra de novo.
+4. Confira em `chrome://policy` (ou `edge://policy`) se as políticas aparecem.
+
+O que o script configura, para `https://<IP>`:
+
+| Política | Efeito |
+|---|---|
+| `VideoCaptureAllowedUrls` | câmera liberada sem perguntar |
+| `AudioCaptureAllowedUrls` | microfone liberado sem perguntar |
+| `ScreenCaptureAllowedByOrigins` | permite o compartilhamento de tela para o endereço |
+| `OverrideSecurityRestrictionsOnInsecureOrigin` | trata `http://<IP>:8080` como seguro (dispensa o HTTPS do Caddy) |
+
+Limites:
+- O seletor de tela/janela do compartilhamento continua aparecendo, por segurança do navegador.
+- O navegador mostra "gerenciado pela sua organização". É normal.
+- Funciona em Windows com Chrome e Edge. Brave e Opera costumam não ler essas chaves; no Firefox e no celular não vale.
+- Para remover, apague as chaves criadas em `HKLM\SOFTWARE\Policies\Google\Chrome` e `HKLM\SOFTWARE\Policies\Microsoft\Edge`
+  (`VideoCaptureAllowedUrls`, `AudioCaptureAllowedUrls`, `ScreenCaptureAllowedByOrigins` e `OverrideSecurityRestrictionsOnInsecureOrigin`).
+  Apagar as chaves inteiras do Chrome e do Edge também remove outras políticas que existirem.
 
 ## Problemas comuns
 
