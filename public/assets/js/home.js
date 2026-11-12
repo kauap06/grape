@@ -115,6 +115,13 @@ function setupEventListeners() {
   elements.inviteCode.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   });
+
+  // Link de convite (/?code=ABC123): já preenche o código da sala
+  const codeFromLink = new URLSearchParams(window.location.search).get('code');
+  if (codeFromLink) {
+    elements.inviteCode.value = codeFromLink.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+    elements.inviteCode.focus();
+  }
   
   // Settings modal
   elements.settingsBtn.addEventListener('click', () => Modal.open('settings-modal'));

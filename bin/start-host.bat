@@ -86,6 +86,16 @@ echo ============================================
 echo Starting Grape services...
 echo ============================================
 
+REM Detecta o IP do Radmin VPN (26.x.x.x) antes de iniciar os servidores:
+REM o PHP usa RADMIN_IP para gerar o link de convite (http://IP:8080)
+set RADMIN_IP=
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '26.*' } | Select-Object -First 1).IPAddress"`) do set RADMIN_IP=%%i
+if not defined RADMIN_IP (
+    echo AVISO: IP do Radmin VPN nao encontrado ^(26.x.x.x^). Abra e conecte o Radmin VPN.
+    echo HTTPS sera iniciado apenas para https://localhost
+    set RADMIN_IP=127.0.0.1
+)
+
 REM PHP HTTP server on 0.0.0.0:8080
 start "Grape HTTP (8080)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" -S 0.0.0.0:8080 -t public > "%PROJECT_DIR%\logs\http.log" 2>&1"
 
@@ -93,15 +103,6 @@ REM WebSocket server on 0.0.0.0:8081
 start "Grape WebSocket (8081)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" server/websocket-server.php > "%PROJECT_DIR%\logs\websocket.log" 2>&1"
 
 REM HTTPS (Caddy) - necessario para camera, microfone e compartilhamento de tela via Radmin VPN
-REM Detecta o IP do Radmin VPN (26.x.x.x) automaticamente
-set RADMIN_IP=
-for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '26.*' } | Select-Object -First 1).IPAddress"`) do set RADMIN_IP=%%i
-if not defined RADMIN_IP (
-    echo AVISO: IP do Radmin VPN nao encontrado ^(26.x.x.x^). Abra e conecte o Radmin VPN.
-    echo HTTPS sera iniciado apenas para https://localhost
-    set RADMIN_IP=localhost
-)
-
 REM Caddy instalado via webi fica em %USERPROFILE%\.local\bin
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
 set CADDY_STARTED=0
@@ -145,7 +146,8 @@ echo   Home page:     http://localhost:8080
 echo   WebSocket:     ws://localhost:8081
 echo.
 echo Radmin VPN access (other users in the same VPN network):
-echo   Home page:     https://%RADMIN_IP%   ^(use este: libera camera, microfone e tela^)
+echo   Link de convite: http://%RADMIN_IP%:8080/?code=CODIGO_DA_SALA
+echo   Home page:     https://%RADMIN_IP%   ^(HTTPS: libera camera, microfone e tela^)
 echo   ^(aceitar o aviso de certificado na primeira vez^)
 echo.
 echo How to find the host's Radmin VPN IPv4 address:
