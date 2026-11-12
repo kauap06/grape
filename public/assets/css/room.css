@@ -349,11 +349,10 @@ body {
   box-shadow: var(--shadow-md);
 }
 
-/* Ativo falante: borda verde apenas no avatar do participante */
+/* Quem está falando: anel verde de 2px por fora da foto do avatar */
 .person.audio-active .user-avatar,
 .user-avatar.audio-active {
-  border: 3px solid var(--color-online);
-  box-sizing: border-box;
+  box-shadow: 0 0 0 2px var(--color-online);
 }
 
 /* ============================================
