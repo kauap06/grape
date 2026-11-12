@@ -664,7 +664,7 @@ body {
 /* ============================================
    Modal de configurações / toasts
    ============================================ */
-.room .toast-container { bottom: 84px; left: 16px; right: auto; }
+.room .toast-container { bottom: var(--space-lg); right: var(--space-lg); left: auto; }
 
 .side-overlay { display: none; }
 

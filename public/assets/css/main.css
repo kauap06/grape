@@ -409,44 +409,63 @@ a:hover { color: #fff; }
   right: var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   z-index: var(--z-toast);
   pointer-events: none;
 }
 .toast {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-sm);
+  align-items: center;
+  gap: var(--space-md);
   padding: var(--space-md);
+  padding-right: 32px;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
   animation: slideIn 0.2s ease;
-  max-width: 360px;
-}
-.toast-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-accent-info);
+  width: 340px;
+  height: 80px;
+  overflow: hidden;
   flex-shrink: 0;
-  margin-top: 5px;
+  position: relative;
 }
-.toast.success .toast-dot { background: var(--color-online); }
-.toast.error .toast-dot { background: var(--color-accent-danger); }
-.toast.warning .toast-dot { background: var(--color-accent-warning); }
-.toast.info .toast-dot { background: var(--color-accent-info); }
+.toast-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--color-bg-active);
+}
+.toast-avatar-gradient {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.toast-avatar-initials {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+}
 .toast-content {
   flex: 1;
   font-size: var(--font-size-sm);
   line-height: 1.5;
 }
 .toast-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
   width: 24px;
   height: 24px;
   border-radius: var(--radius-sm);
@@ -458,6 +477,28 @@ a:hover { color: #fff; }
 .toast-close:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
+}
+.toast-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.toast-title {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.toast-body {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
 }
 
 /* Animations */

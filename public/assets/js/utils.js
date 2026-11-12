@@ -86,6 +86,12 @@ class EventEmitter {
 // ============================================
 // Toast Notifications
 // ============================================
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text == null ? '' : String(text);
+  return div.innerHTML;
+}
+
 const Toast = {
   container: null,
   
@@ -99,14 +105,51 @@ const Toast = {
     }
   },
   
-  show(message, type = 'info', duration = 4000) {
+  show(message, type = 'info', duration = 4000, options = {}) {
     if (!this.container) this.init();
     
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
+    
+    const titleHtml = options.title ? `<div class="toast-title">${escapeHtml(options.title)}</div>` : '';
+    const bodyHtml = options.body 
+      ? `<div class="toast-body">${escapeHtml(options.body)}</div>` 
+      : `<div class="toast-content">${escapeHtml(message)}</div>`;
+    
+    let avatarHtml = '';
+    if (options.avatar) {
+      if (typeof options.avatar === 'string' && options.avatar.startsWith('data:image/')) {
+        // Raw data URL photo
+        avatarHtml = `<img class="toast-avatar" src="${escapeHtml(options.avatar)}" alt="Avatar">`;
+      } else if (typeof options.avatar === 'string') {
+        try {
+          const parsed = JSON.parse(options.avatar);
+          if (parsed && parsed.type === 'custom' && parsed.data) {
+            // Custom photo stored as JSON: {"type":"custom","data":"data:image/..."}
+            avatarHtml = `<img class="toast-avatar" src="${escapeHtml(parsed.data)}" alt="Avatar">`;
+          } else if (parsed && parsed.type === 'gradient' && parsed.color) {
+            // Gradient avatar: {"type":"gradient","color":"#52525b"}
+            avatarHtml = `<div class="toast-avatar-gradient" style="background:${escapeHtml(parsed.color)};"></div>`;
+          }
+        } catch (e) {
+          // Not valid JSON, fall through to initials fallback
+        }
+      }
+    }
+    
+    // Fallback: initials in a colored circle when there is no photo avatar
+    if (!avatarHtml && options.title) {
+      const initial = options.title.trim()[0]?.toUpperCase() || '?';
+      const hue = ((initial.charCodeAt(0) * 31) % 360);
+      avatarHtml = `<div class="toast-avatar-initials" style="background:hsl(${hue}, 60%, 50%);">${escapeHtml(initial)}</div>`;
+    }
+    
     toast.innerHTML = `
-      <span class="toast-dot" aria-hidden="true"></span>
-      <div class="toast-content">${message}</div>
+      ${avatarHtml}
+      <div class="toast-message">
+        ${titleHtml}
+        ${bodyHtml}
+      </div>
       <button class="toast-close" aria-label="Fechar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"/>
@@ -133,10 +176,10 @@ const Toast = {
     setTimeout(() => toast.remove(), 300);
   },
   
-  success(message, duration) { return this.show(message, 'success', duration); },
-  error(message, duration) { return this.show(message, 'error', duration); },
-  warning(message, duration) { return this.show(message, 'warning', duration); },
-  info(message, duration) { return this.show(message, 'info', duration); }
+  success(message, duration, options) { return this.show(message, 'success', duration, options); },
+  error(message, duration, options) { return this.show(message, 'error', duration, options); },
+  warning(message, duration, options) { return this.show(message, 'warning', duration, options); },
+  info(message, duration, options) { return this.show(message, 'info', duration, options); }
 };
 
 // ============================================

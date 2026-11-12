@@ -710,6 +710,16 @@ function handleMediaStateChanged(payload) {
   participant.metadata = { ...participant.metadata, ...mediaState };
   autoAdjustTab(sessionId, before, flagsOf(sessionId));
 
+  // Notificação toast quando alguém inicia/para de compartilhar tela
+  const after = flagsOf(sessionId);
+  if (sessionId !== state.sessionId) {
+    if (!before.screen && after.screen) {
+      Toast.info(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+    } else if (before.screen && !after.screen) {
+      Toast.info(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+    }
+  }
+
   renderParticipants();
   if (state.view.sessionId === sessionId) renderStage();
 }
@@ -1912,6 +1922,12 @@ function handleChatMessage(payload) {
   if (!isOwn && !state.chatViewed) {
     state.chatUnread++;
     updateChatBadge();
+  }
+
+  // Notificação toast de nova mensagem (exibe remetente, foto e conteúdo truncado)
+  if (!isOwn) {
+    const truncated = message.length > 60 ? message.slice(0, 60) + '…' : message;
+    Toast.info(truncated, 8000, { title: displayName || 'Participante', avatar: avatarData });
   }
 
   appendChatMessage({
