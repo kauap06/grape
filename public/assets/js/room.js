@@ -151,8 +151,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // O perfil (nome/avatar) fica salvo no navegador; a sessão PHP não o conhece.
   const profile = Storage.get('profile', {});
-  state.displayName = (state.displayName || profile.displayName || '').trim() || 'Jogador';
-  state.avatar = state.avatar || serializeAvatar(profile.avatar);
+  state.displayName = ((profile.displayName || state.displayName || '').trim()) || 'Jogador';
+  state.avatar = serializeAvatar(profile.avatar) || state.avatar;
   state.view.split = !!Storage.get('roomView', {}).split;
   const savedPos = Storage.get('cameraPos', null);
   if (savedPos && isFinite(savedPos.x) && isFinite(savedPos.y)) state.camPos = savedPos;
@@ -293,6 +293,16 @@ function cacheElements() {
   elements.noiseSuppression = $('noise-suppression');
   elements.echoCancellation = $('echo-cancellation');
 
+  // Aba de perfil
+  elements.settingsTabs = document.querySelectorAll('.settings-tab');
+  elements.profileName = $('profile-name');
+  elements.profileNameCount = $('profile-name-count');
+  elements.profileAvatarPreview = $('profile-avatar-preview');
+  elements.profileSwatches = $('profile-swatches');
+  elements.profilePhotoBtn = $('profile-photo-btn');
+  elements.profilePhotoRemove = $('profile-photo-remove');
+  elements.profilePhotoInput = $('profile-photo-input');
+
   if (elements.roomName) elements.roomName.textContent = state.roomName;
 }
 
@@ -353,13 +363,18 @@ function setupEventListeners() {
   elements.dockInviteBtn?.addEventListener('click', copyInviteLink);
   elements.leaveCallBtn?.addEventListener('click', leaveRoom);
   elements.layoutBtn?.addEventListener('click', toggleSplit);
-  elements.callSettingsBtn?.addEventListener('click', () => Modal.open('settings-modal'));
+  elements.callSettingsBtn?.addEventListener('click', () => openSettings());
 
   // Settings modal
   elements.settingsClose?.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsCancel?.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsSave?.addEventListener('click', saveSettings);
   elements.testMediaBtn?.addEventListener('click', testMediaDevices);
+  elements.settingsTabs?.forEach(tab => tab.addEventListener('click', () => switchSettingsTab(tab.dataset.tab)));
+  elements.profileName?.addEventListener('input', onProfileNameInput);
+  elements.profilePhotoBtn?.addEventListener('click', () => elements.profilePhotoInput?.click());
+  elements.profilePhotoInput?.addEventListener('change', onProfilePhotoSelected);
+  elements.profilePhotoRemove?.addEventListener('click', removeProfilePhoto);
   elements.maxBitrate?.addEventListener('input', (e) => {
     if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${e.target.value} kbps`;
   });
@@ -408,7 +423,7 @@ function setupEventListeners() {
     document.getElementById('overflow-settings')?.addEventListener('click', () => {
       dockOverflowMenu.hidden = true;
       dockMoreBtn.setAttribute('aria-expanded', 'false');
-      Modal.open('settings-modal');
+      openSettings();
     });
     document.getElementById('overflow-invite')?.addEventListener('click', () => {
       dockOverflowMenu.hidden = true;
@@ -493,7 +508,139 @@ function loadSettings() {
   if (elements.echoCancellation) elements.echoCancellation.checked = state.settings.echoCancellation;
 }
 
+// ---- Perfil dentro da sala ------------------------------------------------
+const PROFILE_COLORS = ['#52525b', '#4d7c6f', '#a07a3c', '#a14b4b', '#5b6b9a', '#4a7f94', '#8a5a7a', '#6b7280'];
+const profileDraft = { name: '', avatar: null }; // avatar: objeto {type:'gradient'|'custom', ...}
+
+function openSettings(tab = 'profile') {
+  resetProfileDraft();
+  switchSettingsTab(tab);
+  Modal.open('settings-modal');
+}
+
+function switchSettingsTab(name) {
+  elements.settingsTabs?.forEach(tab => {
+    const active = tab.dataset.tab === name;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.settings-panel').forEach(panel => {
+    const active = panel.dataset.panel === name;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
+  });
+}
+
+function resetProfileDraft() {
+  profileDraft.name = state.displayName;
+  profileDraft.avatar = parseAvatar(state.avatar) || { type: 'gradient', color: PROFILE_COLORS[0] };
+  if (elements.profileName) elements.profileName.value = profileDraft.name;
+  renderProfileDraft();
+}
+
+function renderProfileDraft() {
+  const name = (elements.profileName?.value ?? profileDraft.name).trim();
+  if (elements.profileNameCount) elements.profileNameCount.textContent = String((elements.profileName?.value || '').length);
+
+  if (elements.profileAvatarPreview) setAvatar(elements.profileAvatarPreview, profileDraft.avatar, name || '?');
+
+  if (elements.profileSwatches) {
+    elements.profileSwatches.innerHTML = '';
+    const current = profileDraft.avatar?.type === 'gradient' ? profileDraft.avatar.color : null;
+    PROFILE_COLORS.forEach(color => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'swatch' + (color === current ? ' selected' : '');
+      btn.style.background = color;
+      btn.setAttribute('aria-label', `Cor ${color}`);
+      btn.setAttribute('aria-pressed', String(color === current));
+      btn.addEventListener('click', () => {
+        profileDraft.avatar = { type: 'gradient', color };
+        renderProfileDraft();
+      });
+      elements.profileSwatches.appendChild(btn);
+    });
+  }
+
+  if (elements.profilePhotoRemove) elements.profilePhotoRemove.hidden = profileDraft.avatar?.type !== 'custom';
+}
+
+function onProfileNameInput() {
+  renderProfileDraft();
+}
+
+function onProfilePhotoSelected(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    Toast.error('Por favor, selecione uma imagem válida');
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    Toast.error('A imagem deve ter no máximo 2MB');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    profileDraft.avatar = { type: 'custom', data: ev.target.result };
+    renderProfileDraft();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeProfilePhoto() {
+  profileDraft.avatar = { type: 'gradient', color: PROFILE_COLORS[0] };
+  renderProfileDraft();
+}
+
+// Aplica o perfil editado: salva no navegador, atualiza a tela e avisa a sala
+function applyProfileChanges() {
+  const name = (elements.profileName?.value || '').trim();
+  if (!name) {
+    switchSettingsTab('profile');
+    Toast.error('Digite um nome de exibição.');
+    elements.profileName?.focus();
+    return false;
+  }
+
+  const avatar = serializeAvatar(profileDraft.avatar);
+  if (name === state.displayName && avatar === state.avatar) return true;
+
+  state.displayName = name;
+  state.avatar = avatar;
+
+  const saved = Storage.get('profile', {});
+  const colorIndex = PROFILE_COLORS.indexOf(profileDraft.avatar?.color);
+  Storage.set('profile', {
+    ...saved,
+    displayName: name,
+    avatar: profileDraft.avatar,
+    selectedAvatarIndex: colorIndex >= 0 ? colorIndex : (saved.selectedAvatarIndex || 0)
+  });
+
+  const me = state.participants.get(state.sessionId);
+  if (me) {
+    me.display_name = name;
+    me.avatar_data = avatar;
+  }
+  renderAll();
+  sendWebSocketMessage('profile-update', { display_name: name, avatar_data: avatar });
+  return true;
+}
+
+// Outro participante mudou nome/foto
+function handleProfileUpdated(payload) {
+  const participant = state.participants.get(payload.session_id);
+  if (!participant) return;
+  if (typeof payload.display_name === 'string' && payload.display_name) participant.display_name = payload.display_name;
+  participant.avatar_data = payload.avatar_data ?? null;
+  renderAll();
+}
+
 function saveSettings() {
+  if (!applyProfileChanges()) return;
+
   state.settings = {
     videoQuality: elements.videoQuality?.value || 'auto',
     maxBitrate: parseInt(elements.maxBitrate?.value) || 2500,
@@ -623,6 +770,9 @@ function handleWebSocketMessage(message) {
       break;
     case 'chat-message':
       handleChatMessage(message.payload);
+      break;
+    case 'profile-updated':
+      handleProfileUpdated(message.payload);
       break;
     case 'ping':
       // O servidor derruba a conexão se não responder ao ping

@@ -102,6 +102,9 @@ class SignalingServer implements MessageComponentInterface
                 case 'chat-message':
                     $this->handleChatMessage($from, $payload);
                     break;
+                case 'profile-update':
+                    $this->handleProfileUpdate($from, $payload);
+                    break;
                 default:
                     $this->sendError($from, 'UNKNOWN_TYPE', "Unknown message type: $type");
             }
@@ -338,6 +341,53 @@ class SignalingServer implements MessageComponentInterface
         ], $resourceId);
 
         error_log("Chat message from participant {$info['participant_id']} in room {$info['room_id']}");
+    }
+
+    protected function handleProfileUpdate(ConnectionInterface $from, array $payload): void
+    {
+        $resourceId = $from->resourceId;
+        $info = $this->connectionInfo[$resourceId] ?? null;
+
+        if (!$info) {
+            $this->sendError($from, 'NOT_IN_ROOM', 'Not joined to any room');
+            return;
+        }
+
+        $displayName = trim((string) ($payload['display_name'] ?? ''));
+        if ($displayName === '' || mb_strlen($displayName) > 50) {
+            $this->sendError($from, 'INVALID_NAME', 'Invalid display name');
+            return;
+        }
+
+        // Avatar: foto (data URL de imagem) ou cor ({"type":"gradient","color":"#rrggbb"})
+        $avatarData = $payload['avatar_data'] ?? null;
+        if (is_string($avatarData) && $avatarData !== '') {
+            $isImage = preg_match('#^data:image/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$#', $avatarData) === 1;
+            $decoded = $isImage ? null : json_decode($avatarData, true);
+            $isColor = is_array($decoded)
+                && ($decoded['type'] ?? '') === 'gradient'
+                && preg_match('/^#[0-9a-fA-F]{3,8}$/', (string) ($decoded['color'] ?? '')) === 1;
+            if (!$isImage && !$isColor) {
+                $avatarData = null;
+            }
+        } else {
+            $avatarData = null;
+        }
+
+        $participant = Participant::findById($info['participant_id']);
+        if ($participant) {
+            $participant->update(['display_name' => $displayName, 'avatar_data' => $avatarData]);
+        }
+
+        $this->broadcastToRoom($info['room_id'], [
+            'type' => 'profile-updated',
+            'payload' => [
+                'participant_id' => $info['participant_id'],
+                'session_id' => $info['session_id'],
+                'display_name' => $displayName,
+                'avatar_data' => $avatarData,
+            ],
+        ], $resourceId);
     }
 
     protected function handlePing(ConnectionInterface $from): void

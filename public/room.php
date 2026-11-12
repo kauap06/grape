@@ -228,7 +228,7 @@ $joinUrl = $room->getJoinUrl(Url::absolute());
 
         <!-- Settings Modal -->
         <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <div class="modal panel">
+            <div class="modal panel settings-modal">
                 <div class="modal-header">
                     <h2 id="settings-title">Configurações</h2>
                     <button class="modal-close" id="settings-close" aria-label="Fechar">
@@ -238,37 +238,83 @@ $joinUrl = $room->getJoinUrl(Url::absolute());
                         </svg>
                     </button>
                 </div>
-                <div class="modal-body">
-                    <div class="settings-section">
-                        <h3>Dispositivos de Mídia</h3>
-                        <div class="form-group">
+
+                <div class="settings-tabs" role="tablist" aria-label="Seções das configurações">
+                    <button type="button" class="settings-tab active" role="tab" id="settings-tab-profile" data-tab="profile" aria-selected="true" aria-controls="settings-panel-profile">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        <span>Perfil</span>
+                    </button>
+                    <button type="button" class="settings-tab" role="tab" id="settings-tab-devices" data-tab="devices" aria-selected="false" aria-controls="settings-panel-devices">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                        <span>Áudio e vídeo</span>
+                    </button>
+                    <button type="button" class="settings-tab" role="tab" id="settings-tab-stream" data-tab="stream" aria-selected="false" aria-controls="settings-panel-stream">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                        <span>Transmissão</span>
+                    </button>
+                </div>
+
+                <div class="modal-body settings-body">
+                    <!-- Perfil -->
+                    <section class="settings-panel active" id="settings-panel-profile" role="tabpanel" aria-labelledby="settings-tab-profile" data-panel="profile">
+                        <div class="profile-card">
+                            <div class="profile-avatar" id="profile-avatar-preview" aria-hidden="true"></div>
+                            <div class="profile-fields">
+                                <label for="profile-name" class="form-label">Nome de exibição</label>
+                                <input type="text" id="profile-name" class="settings-input" maxlength="50" autocomplete="off" placeholder="Como você quer ser chamado">
+                                <span class="field-hint"><span id="profile-name-count">0</span>/50</span>
+                            </div>
+                        </div>
+
+                        <div class="settings-group">
+                            <span class="form-label">Cor do avatar</span>
+                            <div class="swatches" id="profile-swatches" role="group" aria-label="Cor do avatar"></div>
+                        </div>
+
+                        <div class="settings-group">
+                            <span class="form-label">Foto</span>
+                            <div class="photo-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" id="profile-photo-btn">Enviar foto…</button>
+                                <button type="button" class="btn btn-ghost btn-sm" id="profile-photo-remove" hidden>Remover foto</button>
+                                <input type="file" id="profile-photo-input" accept="image/*" hidden>
+                            </div>
+                            <p class="field-hint">Imagens de até 2 MB. Todos na sala veem a mudança assim que você salvar.</p>
+                        </div>
+                    </section>
+
+                    <!-- Áudio e vídeo -->
+                    <section class="settings-panel" id="settings-panel-devices" role="tabpanel" aria-labelledby="settings-tab-devices" data-panel="devices" hidden>
+                        <div class="settings-group">
                             <label for="camera-select" class="form-label">Câmera</label>
                             <select id="camera-select" class="form-select"></select>
                         </div>
-                        <div class="form-group">
+                        <div class="settings-group">
                             <label for="mic-select" class="form-label">Microfone</label>
                             <select id="mic-select" class="form-select"></select>
                         </div>
-                        <div class="form-group">
+                        <div class="settings-group">
                             <label for="speaker-select" class="form-label">Alto-falante</label>
                             <select id="speaker-select" class="form-select"></select>
                         </div>
-                        <div class="form-group preference-group">
-                            <label class="preference-item">
-                                <input type="checkbox" id="noise-suppression" checked>
-                                <span>Supressão de ruído</span>
-                            </label>
-                            <label class="preference-item">
-                                <input type="checkbox" id="echo-cancellation" checked>
-                                <span>Cancelamento de eco</span>
-                            </label>
+                        <div class="settings-group">
+                            <span class="form-label">Qualidade do áudio</span>
+                            <div class="switch-list">
+                                <label class="switch-row">
+                                    <span class="switch-text"><strong>Supressão de ruído</strong><small>Reduz sons de fundo, como teclado e ventilador.</small></span>
+                                    <input type="checkbox" id="noise-suppression" class="switch" checked>
+                                </label>
+                                <label class="switch-row">
+                                    <span class="switch-text"><strong>Cancelamento de eco</strong><small>Evita que o som dos alto-falantes volte pelo microfone.</small></span>
+                                    <input type="checkbox" id="echo-cancellation" class="switch" checked>
+                                </label>
+                            </div>
                         </div>
-                        <button type="button" class="btn btn-secondary" id="test-media-btn">Testar Dispositivos</button>
-                    </div>
+                        <button type="button" class="btn btn-secondary" id="test-media-btn">Testar dispositivos</button>
+                    </section>
 
-                    <div class="settings-section">
-                        <h3>Qualidade de Stream</h3>
-                        <div class="form-group">
+                    <!-- Transmissão -->
+                    <section class="settings-panel" id="settings-panel-stream" role="tabpanel" aria-labelledby="settings-tab-stream" data-panel="stream" hidden>
+                        <div class="settings-group">
                             <label for="video-quality" class="form-label">Resolução</label>
                             <select id="video-quality" class="form-select">
                                 <option value="auto">Automático</option>
@@ -278,19 +324,22 @@ $joinUrl = $room->getJoinUrl(Url::absolute());
                                 <option value="360p">360p</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label for="max-bitrate" class="form-label">Bitrate Máximo</label>
+                        <div class="settings-group">
+                            <div class="range-head">
+                                <label for="max-bitrate" class="form-label">Bitrate máximo</label>
+                                <span class="range-value" id="max-bitrate-value">2500 kbps</span>
+                            </div>
                             <input type="range" id="max-bitrate" class="form-range" min="500" max="5000" step="500" value="2500">
-                            <span id="max-bitrate-value">2500 kbps</span>
+                            <p class="field-hint">Valores maiores deixam a imagem mais nítida, mas exigem mais internet.</p>
                         </div>
-                        <div class="form-group">
-                            <label for="frame-rate" class="form-label">Taxa de Quadros</label>
+                        <div class="settings-group">
+                            <label for="frame-rate" class="form-label">Taxa de quadros</label>
                             <select id="frame-rate" class="form-select">
                                 <option value="30">30 FPS</option>
                                 <option value="60">60 FPS</option>
                             </select>
                         </div>
-                    </div>
+                    </section>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="settings-cancel">Cancelar</button>
