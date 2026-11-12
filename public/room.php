@@ -249,6 +249,16 @@ $joinUrl = $room->getJoinUrl(Url::absolute());
                             <label for="speaker-select" class="form-label">Alto-falante</label>
                             <select id="speaker-select" class="form-select"></select>
                         </div>
+                        <div class="form-group preference-group">
+                            <label class="preference-item">
+                                <input type="checkbox" id="noise-suppression" checked>
+                                <span>Supressão de ruído</span>
+                            </label>
+                            <label class="preference-item">
+                                <input type="checkbox" id="echo-cancellation" checked>
+                                <span>Cancelamento de eco</span>
+                            </label>
+                        </div>
                         <button type="button" class="btn btn-secondary" id="test-media-btn">Testar Dispositivos</button>
                     </div>
 

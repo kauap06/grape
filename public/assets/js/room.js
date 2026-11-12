@@ -97,7 +97,9 @@ const state = {
   settings: {
     videoQuality: 'auto',
     maxBitrate: 2500,
-    frameRate: 30
+    frameRate: 30,
+    noiseSuppression: true,
+    echoCancellation: true
   }
 };
 
@@ -275,6 +277,8 @@ function cacheElements() {
   elements.maxBitrate = $('max-bitrate');
   elements.maxBitrateValue = $('max-bitrate-value');
   elements.frameRate = $('frame-rate');
+  elements.noiseSuppression = $('noise-suppression');
+  elements.echoCancellation = $('echo-cancellation');
 
   if (elements.roomName) elements.roomName.textContent = state.roomName;
 }
@@ -343,6 +347,12 @@ function setupEventListeners() {
   elements.testMediaBtn?.addEventListener('click', testMediaDevices);
   elements.maxBitrate?.addEventListener('input', (e) => {
     if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${e.target.value} kbps`;
+  });
+  elements.noiseSuppression?.addEventListener('change', (e) => {
+    state.settings.noiseSuppression = e.target.checked;
+  });
+  elements.echoCancellation?.addEventListener('change', (e) => {
+    state.settings.echoCancellation = e.target.checked;
   });
 
   // Window events
@@ -464,13 +474,17 @@ function loadSettings() {
   if (elements.maxBitrate) elements.maxBitrate.value = state.settings.maxBitrate;
   if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${state.settings.maxBitrate} kbps`;
   if (elements.frameRate) elements.frameRate.value = state.settings.frameRate;
+  if (elements.noiseSuppression) elements.noiseSuppression.checked = state.settings.noiseSuppression;
+  if (elements.echoCancellation) elements.echoCancellation.checked = state.settings.echoCancellation;
 }
 
 function saveSettings() {
   state.settings = {
     videoQuality: elements.videoQuality?.value || 'auto',
     maxBitrate: parseInt(elements.maxBitrate?.value) || 2500,
-    frameRate: parseInt(elements.frameRate?.value) || 30
+    frameRate: parseInt(elements.frameRate?.value) || 30,
+    noiseSuppression: elements.noiseSuppression?.checked ?? true,
+    echoCancellation: elements.echoCancellation?.checked ?? true
   };
 
   Storage.set('roomSettings', state.settings);
@@ -1122,7 +1136,9 @@ async function initializeLocalMedia() {
       height: 720,
       frameRate: 30,
       deviceId: devicePrefs.cameraId || undefined,
-      audioDeviceId: devicePrefs.micId || undefined
+      audioDeviceId: devicePrefs.micId || undefined,
+      noiseSuppression: state.settings.noiseSuppression,
+      echoCancellation: state.settings.echoCancellation
     });
 
     // Só abre a câmera se ela deve começar ligada; senão a luz nem acende
@@ -1405,7 +1421,9 @@ async function applyVideoConstraints() {
 async function testMediaDevices() {
   const constraints = await Devices.getConstraints(true, true, {
     deviceId: elements.cameraSelect.value || undefined,
-    audioDeviceId: elements.micSelect.value || undefined
+    audioDeviceId: elements.micSelect.value || undefined,
+    noiseSuppression: state.settings.noiseSuppression,
+    echoCancellation: state.settings.echoCancellation
   });
 
   try {

@@ -316,8 +316,8 @@ const Devices = {
     
     if (audio) {
       constraints.audio = {
-        echoCancellation: true,
-        noiseSuppression: true,
+        echoCancellation: options.echoCancellation ?? true,
+        noiseSuppression: options.noiseSuppression ?? true,
         autoGainControl: true,
         sampleRate: 48000,
         channelCount: 2,
