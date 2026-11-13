@@ -6,6 +6,9 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+// Horário do Brasil nos logs e em date() (o php.ini do XAMPP usa Europe/Berlin)
+date_default_timezone_set('America/Sao_Paulo');
+
 use Ratchet\Server\IoServer;
 use Ratchet\Http\HttpServer;
 use Ratchet\WebSocket\WsServer;
@@ -14,6 +17,11 @@ use React\EventLoop\Factory;
 use GamingCalls\Config\Config;
 use GamingCalls\Server\SignalingServer;
 use GamingCalls\Database\Database;
+
+// Envia os error_log() para um arquivo que sempre existe (o php.ini do XAMPP aponta para uma pasta inexistente)
+@mkdir(__DIR__ . '/../logs', 0777, true);
+ini_set('log_errors', '1');
+ini_set('error_log', __DIR__ . '/../logs/websocket-error.log');
 
 // Load configuration
 Config::load(__DIR__ . '/../config/config.php');
