@@ -1,9 +1,13 @@
 @echo off
 REM ============================================
 REM Grape - Local Hosting Startup Script (Windows)
-REM Starts PHP HTTP server (port 8080) and WebSocket server (port 8081)
+REM Starts MySQL, the PHP HTTP server (port 8080) and the WebSocket server
+REM (port 8081). Does NOT use XAMPP or Apache - uses a standalone PHP and a
+REM standalone MySQL/MariaDB found on PATH (or already running as a service).
 REM Designed for Radmin VPN local hosting
 REM ============================================
+
+setlocal enabledelayedexpansion
 
 REM Detect project root automatically (this script lives in bin/)
 cd /d "%~dp0.."
@@ -11,14 +15,18 @@ set PROJECT_DIR=%CD%
 echo Project root: %PROJECT_DIR%
 
 REM ============================================
-REM 1. Detect PHP executable (prefer XAMPP, then PATH)
+REM 1. Detect PHP executable (standalone install on PATH - not XAMPP)
 REM ============================================
 set PHP_EXE=
 
-if exist "C:\xampp\php\php.exe" set PHP_EXE=C:\xampp\php\php.exe
+for /f "tokens=*" %%i in ('where php 2^>nul') do if not defined PHP_EXE set PHP_EXE=%%i
+
+if not defined PHP_EXE if exist "C:\php\php.exe" set PHP_EXE=C:\php\php.exe
 
 if not defined PHP_EXE (
-    for /f "tokens=*" %%i in ('where php 2^>nul') do if not defined PHP_EXE set PHP_EXE=%%i
+    echo ERROR: PHP not found. Install standalone PHP 8.2+ ^(https://windows.php.net/download/^)
+    echo        and add its folder to PATH - this project does not use XAMPP's PHP.
+    exit /b 1
 )
 
 echo Using PHP: %PHP_EXE%
@@ -55,7 +63,60 @@ if not exist "%PROJECT_DIR%\vendor\autoload.php" (
 )
 
 REM ============================================
-REM 3. Check ports 8080 and 8081 are free
+REM 3. Prepare logs directory
+REM ============================================
+if not exist "%PROJECT_DIR%\logs" mkdir "%PROJECT_DIR%\logs"
+
+REM ============================================
+REM 4. Detect and start MySQL/MariaDB (standalone, not XAMPP's).
+REM    If it's already running (e.g. installed as a Windows service by the
+REM    MySQL/MariaDB installer), it's reused as-is and nothing is started here.
+REM ============================================
+echo.
+echo Checking MySQL (port 3306)...
+set MYSQL_ALREADY_RUNNING=0
+>nul netstat -ano | findstr /C:":3306 "
+if not errorlevel 1 set MYSQL_ALREADY_RUNNING=1
+
+if %MYSQL_ALREADY_RUNNING% EQU 1 (
+    echo MySQL already running on port 3306 - reusing it.
+) else (
+    set MYSQLD_EXE=
+    for /f "tokens=*" %%i in ('where mysqld 2^>nul') do if not defined MYSQLD_EXE set MYSQLD_EXE=%%i
+
+    if not defined MYSQLD_EXE (
+        echo AVISO: mysqld nao encontrado no PATH.
+        echo         Instale o MySQL ou o MariaDB ^(standalone, sem XAMPP^) e adicione a pasta
+        echo         "bin" dele ao PATH, ou instale-o como servico do Windows e inicie-o antes
+        echo         de rodar este script. Download:
+        echo           MySQL:   https://dev.mysql.com/downloads/mysql/
+        echo           MariaDB: https://mariadb.org/download/
+    ) else (
+        echo Starting MySQL: %MYSQLD_EXE%
+        start "Grape MySQL (3306)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
+
+        REM Wait for MySQL to accept connections on 3306 (up to ~15s)
+        set MYSQL_STARTED=0
+        for /l %%n in (1,1,15) do (
+            if !MYSQL_STARTED! EQU 0 (
+                >nul netstat -ano | findstr /C:":3306 "
+                if not errorlevel 1 (
+                    set MYSQL_STARTED=1
+                ) else (
+                    timeout /t 1 /nobreak >nul
+                )
+            )
+        )
+        if !MYSQL_STARTED! EQU 0 (
+            echo AVISO: MySQL nao respondeu na porta 3306 apos 15s. Veja logs\mysql.log
+        ) else (
+            echo MySQL is up on port 3306.
+        )
+    )
+)
+
+REM ============================================
+REM 5. Check ports 8080 and 8081 are free
 REM ============================================
 echo Checking port 8080 (HTTP)...
 >nul netstat -ano | findstr /C:":8080 "
@@ -74,12 +135,7 @@ if not errorlevel 1 (
 echo Ports 8080 and 8081 are free.
 
 REM ============================================
-REM 4. Prepare logs directory
-REM ============================================
-if not exist "%PROJECT_DIR%\logs" mkdir "%PROJECT_DIR%\logs"
-
-REM ============================================
-REM 5. Start services in separate terminal windows
+REM 6. Start services in separate terminal windows
 REM ============================================
 echo.
 echo ============================================
@@ -102,9 +158,29 @@ start "Grape HTTP (8080)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" -S 0.0.0.0:8080
 REM WebSocket server on 0.0.0.0:8081
 start "Grape WebSocket (8081)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" server/websocket-server.php > "%PROJECT_DIR%\logs\websocket.log" 2>&1"
 
+REM Avisa (sem matar sozinho - pode ser algo seu, fora do Grape) se o Apache
+REM do XAMPP ainda estiver rodando e grudado na porta 443/80: ele responde no
+REM lugar do Caddy e o WebSocket nunca conecta, mesmo com tudo aqui certo.
+tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
+if not errorlevel 1 (
+    echo.
+    echo AVISO: o Apache ^(httpd.exe^) do XAMPP esta rodando e pode estar ocupando
+    echo        a porta 443/80, impedindo o Caddy de responder de verdade. O Grape
+    echo        nao usa o Apache - pare-o ^(XAMPP Control Panel, ou "taskkill /F /IM httpd.exe"^)
+    echo        e, se ele volta sozinho, desative o servico dele em services.msc.
+    echo.
+)
+
 REM HTTPS (Caddy) - necessario para camera, microfone e compartilhamento de tela via Radmin VPN
 REM Caddy instalado via webi fica em %USERPROFILE%\.local\bin
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+
+REM Mata qualquer caddy.exe que tenha sobrado de uma rodada anterior (janela
+REM fechada sem encerrar o processo, Ctrl+C que nao propagou, etc.). Sem isso,
+REM dois caddy.exe podem ficar "escutando" a porta 443 ao mesmo tempo e so um
+REM deles responde de verdade - o outro so acumula log vazio e confunde.
+taskkill /F /IM caddy.exe >nul 2>&1
+
 set CADDY_STARTED=0
 where caddy >nul 2>&1
 if errorlevel 1 (
@@ -119,7 +195,7 @@ REM Give servers time to start
 timeout /t 3 /nobreak >nul
 
 REM ============================================
-REM 6. Verify services started
+REM 7. Verify services started
 REM ============================================
 set WS_STARTED=0
 set HTTP_STARTED=0
@@ -134,7 +210,7 @@ if exist "%PROJECT_DIR%\logs\http.log" (
 )
 
 REM ============================================
-REM 7. Display results and Radmin VPN instructions
+REM 8. Display results and Radmin VPN instructions
 REM ============================================
 echo.
 echo ============================================
@@ -157,12 +233,14 @@ echo   3. Look for the adapter "Radmin Virtual Network Adapter" (or similar)
 echo   4. Note the IPv4 Address (e.g. 26.x.x.x)
 echo.
 echo Logs:
+echo   MySQL:      %PROJECT_DIR%\logs\mysql.log
 echo   HTTP:       %PROJECT_DIR%\logs\http.log
 echo   WebSocket:  %PROJECT_DIR%\logs\websocket.log
 echo   HTTPS:      %PROJECT_DIR%\logs\caddy.log
 echo.
 echo Services run in separate windows titled:
-echo   "Grape HTTP (8080)", "Grape WebSocket (8081)" and "Grape HTTPS (Caddy)"
+echo   "Grape MySQL (3306)", "Grape HTTP (8080)", "Grape WebSocket (8081)" and "Grape HTTPS (Caddy)"
+echo   (MySQL window only appears if this script started it; it's skipped if MySQL was already running)
 echo.
 echo To stop: close each service window (or press Ctrl+C inside them).
 echo ============================================

@@ -44,6 +44,16 @@ CREATE TABLE `room_participants` (
     INDEX `idx_session` (`session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Sessions table (cópia das sessões PHP, usada por SessionManager)
+CREATE TABLE IF NOT EXISTS `sessions` (
+    `id` VARCHAR(128) NOT NULL,
+    `data` MEDIUMTEXT NOT NULL,
+    `last_activity` INT UNSIGNED NOT NULL,
+    `created_at` INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_last_activity` (`last_activity`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Insert a test room (optional, for development)

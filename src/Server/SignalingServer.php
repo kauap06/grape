@@ -71,6 +71,12 @@ class SignalingServer implements MessageComponentInterface
         $type = $data['type'] ?? '';
         $payload = $data['payload'] ?? [];
 
+        // O payload precisa ser um objeto/array; qualquer outra coisa causaria TypeError
+        if (!is_array($payload)) {
+            $this->sendError($from, 'INVALID_PAYLOAD', 'Payload must be an object');
+            return;
+        }
+
         try {
             switch ($type) {
                 case 'join':
@@ -109,7 +115,9 @@ class SignalingServer implements MessageComponentInterface
                     $this->sendError($from, 'UNKNOWN_TYPE', "Unknown message type: $type");
             }
         } catch (\Throwable $e) {
-            error_log("WebSocket error: " . $e->getMessage());
+            error_log("WebSocket error [type=$type]: " . get_class($e) . ": " . $e->getMessage()
+                . " em " . $e->getFile() . ":" . $e->getLine()
+                . "\n" . $e->getTraceAsString());
             $this->sendError($from, 'SERVER_ERROR', 'Internal server error');
         }
     }
@@ -117,14 +125,20 @@ class SignalingServer implements MessageComponentInterface
     public function onClose(ConnectionInterface $conn): void
     {
         $resourceId = $conn->resourceId;
-        $this->cleanupConnection($resourceId);
+        try {
+            $this->cleanupConnection($resourceId);
+        } catch (\Throwable $e) {
+            error_log("Cleanup error on close: " . get_class($e) . ": " . $e->getMessage()
+                . " em " . $e->getFile() . ":" . $e->getLine());
+        }
         unset($this->connections[$resourceId], $this->connectionHealth[$resourceId]);
         error_log("WebSocket connection closed: $resourceId");
     }
 
     public function onError(ConnectionInterface $conn, \Exception $e): void
     {
-        error_log("WebSocket error on connection {$conn->resourceId}: " . $e->getMessage());
+        error_log("WebSocket error on connection {$conn->resourceId}: " . $e->getMessage()
+            . " em " . $e->getFile() . ":" . $e->getLine());
         $conn->close();
     }
 
@@ -135,6 +149,15 @@ class SignalingServer implements MessageComponentInterface
         $displayName = $payload['display_name'] ?? 'Anonymous';
         $avatarData = $payload['avatar_data'] ?? null;
         $metadata = $payload['metadata'] ?? [];
+
+        // O model exige ?string para avatar_data e array para metadata
+        if ($avatarData !== null && !is_string($avatarData)) {
+            $avatarData = json_encode($avatarData);
+        }
+        if (!is_array($metadata)) {
+            $metadata = [];
+        }
+        $displayName = (string) $displayName;
 
         if (empty($roomCode) || empty($sessionId)) {
             $this->sendError($conn, 'INVALID_PAYLOAD', 'Room code and session ID required');
@@ -303,7 +326,7 @@ class SignalingServer implements MessageComponentInterface
             return;
         }
 
-        $message = trim($payload['message'] ?? '');
+        $message = trim((string) ($payload['message'] ?? ''));
         if ($message === '') {
             $this->sendError($from, 'EMPTY_MESSAGE', 'Message cannot be empty');
             return;
@@ -422,10 +445,18 @@ class SignalingServer implements MessageComponentInterface
             }
         }
 
+        // Garante que o estado em memória é limpo mesmo se o banco falhar
+        unset($this->connectionInfo[$resourceId]);
+
         // Mark participant as left in database
-        $participant = Participant::findById($participantId);
-        if ($participant && $participant->isActive) {
-            $participant->leave();
+        try {
+            $participant = Participant::findById($participantId);
+            if ($participant && $participant->isActive) {
+                $participant->leave();
+            }
+        } catch (\Throwable $e) {
+            error_log("Failed to mark participant $participantId as left: " . $e->getMessage()
+                . " em " . $e->getFile() . ":" . $e->getLine());
         }
 
         // Notify others
@@ -437,17 +468,15 @@ class SignalingServer implements MessageComponentInterface
             ],
         ], $resourceId);
 
-        unset($this->connectionInfo[$resourceId]);
         error_log("Participant $participantId ($sessionId) left room $roomId");
     }
 
-    protected function broadcastToRoom(int $roomId, array $message, int $excludeResourceId = null): void
+    protected function broadcastToRoom(int $roomId, array $message, ?int $excludeResourceId = null): void
     {
         if (!isset($this->roomConnections[$roomId])) {
             return;
         }
 
-        $json = json_encode($message);
         foreach ($this->roomConnections[$roomId] as $resourceId => $conn) {
             if ($resourceId !== $excludeResourceId) {
                 $this->send($conn, $message);
@@ -492,10 +521,13 @@ class SignalingServer implements MessageComponentInterface
 
     protected function getWebRTCConfig(): array
     {
+        $stun = Config::get('webrtc.stun_servers', []);
+        $turn = Config::get('webrtc.turn_servers', []);
+
         return [
             'iceServers' => array_merge(
-                Config::get('webrtc.stun_servers', []),
-                Config::get('webrtc.turn_servers', [])
+                is_array($stun) ? $stun : [],
+                is_array($turn) ? $turn : []
             ),
             'iceTransportPolicy' => Config::get('webrtc.ice_transport_policy', 'all'),
             'bundlePolicy' => Config::get('webrtc.bundle_policy', 'max-bundle'),
