@@ -104,6 +104,7 @@ REM Certificado
 deploy\ca\install-ca.bat          REM host: confia e gera o instalador
 deploy\ca\install-ca.bat /silent  REM sem mensagens (usado pelo start-host)
 deploy\ca\remove-ca.bat           REM desfaz a confiança
+deploy/ca/test-https.bat <IP>       REM diagnostico: este PC confia no certificado?
 ```
 
 Para parar: feche as janelas `Grape MariaDB (3306)`, `Grape HTTP (8080)`,
@@ -151,6 +152,7 @@ a correção aplicada.
 | `CertUtil: -addstore FALHOU: ERROR_INVALID_NAME` | `certutil -addstore` não lê o PEM do Caddy direto | converte para DER (`certutil -decode`) antes de instalar |
 | `/silent` travava | abria pedido de UAC invisível | em `/silent` nunca eleva: avisa e sai com erro |
 | Remoção "com sucesso" que não removia | `certutil -delstore ROOT "Nome"` não remove da loja Root | `remove-ca.bat` remove por **thumbprint** |
+| Convidado: "site nao e seguro", mic/camera bloqueados | CA nao instalada, navegador nao reiniciado, link HTTP ou **Firefox** (loja propria) | rode `deploy/ca/test-https.bat <IP>` no PC dele; ver `docs/CERTIFICADOS.md` 7.1 |
 
 ### 7.3 Sala / WebSocket / banco
 
@@ -164,6 +166,41 @@ a correção aplicada.
 | Avatar grande atrasava a conexão | `await` da redução antes de conectar | conexão primeiro; redução em segundo plano |
 
 ---
+
+## 7.2 Desempenho (por que às vezes "demora" para abrir)
+
+Medições feitas nesta máquina, com as correções aplicadas:
+
+| Item | Antes | Depois |
+|---|---|---|
+| 10 requisições à home (via Caddy) | 2,12 s | **0,90 s** |
+| Home page (TTFB) | ~100 ms | ~20-50 ms |
+| Room page (load completo) | — | **~350 ms** |
+| Reconexão do WebSocket após o servidor voltar | até ~8 s | **~1 s** |
+| Coleta de ICE (STUN do Google) | — | ~1,1 s |
+
+O que foi ajustado:
+
+- **opcache habilitado** no PHP portátil (`portable/php/php.ini`:
+  `opcache.enable_cli=1`), que é o que acelera o servidor embutido;
+- **reconexão mais rápida**: espera inicial de 300 ms com teto de 5 s (antes
+  500 ms com teto de 8 s);
+- **retomada imediata** ao voltar para a aba ou quando a rede volta
+  (`visibilitychange` / `online`), sem esperar o intervalo;
+- **aquecimento no start**: o `start-host.bat` faz duas requisições à home
+  depois de subir tudo, para o primeiro convidado não pegar o servidor "frio".
+
+Observações:
+
+- O `php -S` é **single-thread** (uma requisição por vez). Isso é aceitável para
+  até ~10 participantes, mas não escala como Apache/Nginx.
+- Se a mídia demora a aparecer (mas o chat funciona), o gargalo é o **ICE/NAT**,
+  não o WebSocket: são ~1,1 s de coleta com STUN. Em Radmin VPN os candidatos
+  locais bastam; se quiser eliminar essa espera, remova os `stun_servers` em
+  `config/config.php` (só faça isso se todos estiverem na mesma VPN).
+- Instalar o certificado e **não reiniciar o navegador** é a causa mais comum de
+  "demorou para funcionar": o Chrome/Brave guarda o erro de certificado até
+  fechar todas as janelas.
 
 ## 8. Manutenção
 
@@ -195,6 +232,8 @@ database/schema.sql                    # avatar_data -> MEDIUMTEXT
 database/migrate.php                   # NOVO: migração idempotente no start
 deploy/ca/install-ca.bat               # NOVO: confia na CA (sem admin, /silent)
 deploy/ca/remove-ca.bat                # NOVO: desfaz a confiança
+deploy/ca/test-https.bat              # NOVO: diagnostico de HTTPS no PC do convidado
+deploy/ca/test-https.ps1              # NOVO: apoio do diagnostico
 deploy/ca/make-guest-installer.bat     # NOVO: gera o instalador de convidado
 deploy/ca/make-guest-installer.ps1     # NOVO: injeta o certificado no modelo
 deploy/ca/guest-installer-template.bat # NOVO: modelo do instalador único

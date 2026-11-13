@@ -164,6 +164,39 @@ certificado.
 | `remove-ca.bat` diz "nenhum certificado encontrado" mas o aviso continua | o certificado foi instalado para o computador inteiro | remova em `certlm.msc` (loja LocalMachine) |
 | Convidado não abre nada | firewall do host | libere TCP **443** (e 8080/8081 se usar o link HTTP) |
 | O aviso voltou depois de dias | a CA do Caddy foi recriada (por exemplo, `%APPDATA%\Caddy` apagado) | rode `bin/start-host.bat` e reenvie o novo `install-ca.bat` |
+| Convidado: "site não é seguro" e câmera/micro bloqueados | CA não instalada, navegador não reiniciado, link HTTP ou **Firefox** | rode `deploy\ca\test-https.bat` no PC dele (ver seção 7.1) |
+
+
+### 7.1 Convidado diz que o site "não é seguro"
+
+Rode **no PC do convidado** (não no host):
+
+```bat
+deploy\ca\test-https.bat 26.22.182.86
+```
+
+Ele responde três coisas:
+
+1. se a CA do host está na loja do Windows (usuário / computador);
+2. se o Windows aceita o certificado de `https://<IP>` (teste real de TLS);
+3. qual é o navegador padrão — e avisa se for **Firefox**.
+
+Como interpretar:
+
+| Resultado | O que fazer |
+|---|---|
+| `usuario atual: AUSENTE` | rode o `install-ca.bat` que o host enviou |
+| `usuario atual: OK` + `Conexao HTTPS: FALHOU` | a CA do host mudou (Caddy recriado) → peça o `install-ca.bat` novo; ou o IP mudou |
+| `usuario atual: OK` + `OK - HTTP 200` | o PC está certo: **feche todas as janelas do navegador** e abra de novo |
+| navegador padrão = **Firefox** | o Firefox usa a loja **dele**, não a do Windows: use Chrome/Edge, ou importe em `Firefox > Configurações > Privacidade e Segurança > Certificados > Ver Certificados > Autoridades > Importar` |
+| abre `http://IP:8080` em vez de `https://IP` | o link HTTP nunca é "seguro": câmera/micro/tela só funcionam no link `https://` |
+
+Checklist rápido para o convidado:
+
+- [ ] instalou o `install-ca.bat` (e viu "Pronto!")?
+- [ ] fechou **todas** as janelas do navegador depois disso?
+- [ ] está abrindo o link que começa com **https://**?
+- [ ] o navegador é Chrome, Edge ou Brave (Chromium)? Firefox precisa de passo extra.
 
 ---
 
@@ -174,6 +207,7 @@ bin/start-host.bat                     # confia na CA e gera o instalador de con
 deploy/Caddyfile                       # HTTPS em 443 + proxy /ws
 deploy/ca/install-ca.bat               # instala a CA (host) / um .crt (convidado)
 deploy/ca/remove-ca.bat                # desfaz a confianca (remove por thumbprint)
+deploy/ca/test-https.bat               # diagnostico no PC do convidado
 deploy/ca/make-guest-installer.bat     # gera o instalador de arquivo unico
 deploy/ca/make-guest-installer.ps1     # injeta o certificado no modelo
 deploy/ca/guest-installer-template.bat # modelo do instalador embutido

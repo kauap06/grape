@@ -171,6 +171,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupMediaDevices();
   initializeWebSocket();
   initializeLocalMedia();
+
+  // Voltar para a aba (ou reconectar a rede) tenta na hora, sem esperar o backoff
+  const retryNow = () => {
+    if (state.wsConnected) return;
+    state.wsReconnectAttempts = 0;
+    initializeWebSocket();
+  };
+  window.addEventListener('online', retryNow);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) retryNow();
+  });
   // Roda em segundo plano: nunca atrasa a conexão (uma foto grande pode
   // demorar para decodificar) e avisa a sala quando terminar.
   shrinkStoredAvatar();
@@ -790,7 +801,7 @@ function scheduleReconnect() {
   }
 
   state.wsReconnectAttempts++;
-  const delay = Math.min(500 * Math.pow(1.6, state.wsReconnectAttempts), 8000);
+  const delay = Math.min(300 * Math.pow(1.5, state.wsReconnectAttempts), 5000);
   Logger.log(`Reconnecting in ${delay}ms (attempt ${state.wsReconnectAttempts})`);
 
   if (state.wsReconnectAttempts === state.maxReconnectAttempts + 1) {

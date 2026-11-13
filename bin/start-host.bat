@@ -263,6 +263,13 @@ if exist "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" (
     call "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" >nul 2>&1
 )
 
+REM Aquece o PHP e o Caddy (compila os arquivos no opcache) para o primeiro
+REM convidado nao pegar o servidor "frio" e achar que travou.
+if exist "%SystemRoot%\System32\curl.exe" (
+    curl.exe -s -k -o NUL --max-time 8 https://localhost/ >nul 2>&1
+    curl.exe -s -k -o NUL --max-time 8 https://localhost/ >nul 2>&1
+)
+
 REM ============================================
 REM 7. Verify services started
 REM ============================================
