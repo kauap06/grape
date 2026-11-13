@@ -432,10 +432,46 @@ const Utils = {
   clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   },
-  
-  lerp(start, end, t) {
-    return start + (end - start) * t;
-  }
+
+  // ==========================================
+  // Avatares
+  // ==========================================
+  // O avatar trafega como data URL dentro do JSON de 'join' e fica salvo no
+  // banco. Uma foto original (até 2MB) vira ~2,7MB em base64 e o servidor
+  // WebSocket (Ratchet) corta mensagens acima de 1MB, fechando a conexão - o
+  // cliente reconectava para sempre em "Reconectando". Reduzir para 256px JPEG
+  // mantém o avatar bonito e o pacote em dezenas de KB.
+  async shrinkImageDataUrl(dataUrl, maxSize = 256, quality = 0.85) {
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        // Nunca deixa a redução travar a página (data URL corrompida, codec
+        // sem suporte, etc.).
+        const timer = setTimeout(() => reject(new Error('Tempo esgotado ao decodificar a imagem')), 5000);
+        image.onload = () => { clearTimeout(timer); resolve(image); };
+        image.onerror = () => { clearTimeout(timer); reject(new Error('Falha ao decodificar a imagem')); };
+        image.src = dataUrl;
+      });
+
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const width = Math.max(1, Math.round(img.width * scale));
+      const height = Math.max(1, Math.round(img.height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const reduced = canvas.toDataURL('image/jpeg', quality);
+      // Se por algum motivo ficou maior, mantém o original
+      return reduced.length < dataUrl.length ? reduced : dataUrl;
+    } catch (e) {
+      Logger.warn('Não foi possível reduzir a imagem do avatar:', e);
+      return dataUrl;
+    }
+  },
+
 };
 
 // ============================================

@@ -38,6 +38,8 @@ $loop = Factory::create();
 
 // Create WebSocket server
 $signalingServer = new SignalingServer($loop);
+// Nota: o Ratchet (v0.4.x) limita mensagens a 1 MB e não expõe setter para
+// isso; por isso o cliente reduz o avatar antes de enviar (utils.js).
 $webSocketServer = new WsServer($signalingServer);
 $httpServer = new HttpServer($webSocketServer);
 

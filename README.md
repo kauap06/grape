@@ -21,11 +21,16 @@ Designed for **local hosting through Radmin VPN**: one computer hosts the room a
 
 ## Requirements
 
-- PHP 8.2 or higher (XAMPP recommended on Windows)
-- Composer
-- MySQL/MariaDB (for room persistence — XAMPP provides it)
+- Nothing to install: the project bundles a **portable toolchain** in `portable/`:
+  - **PHP 8.3** (`portable/php`, with a ready `php.ini` and a bundled CA bundle for curl/openssl)
+  - **MariaDB** (`portable/mariadb`, with its own data dir - initialized on first run)
+  - **Caddy** (`portable/caddy`)
+  - **Composer** (`portable/composer/composer.phar`, runs with the bundled PHP)
+  - The WebSocket server is pure PHP, so it runs from the same portable PHP.
+  `bin/start-host.bat` uses these automatically (falling back to PATH if a folder is missing).
 - Radmin VPN installed on every participant (host + guests)
 - A modern browser with WebRTC support (camera, microphone, screen sharing)
+- One-time only: trust the HTTPS certificate on each PC — the host does it automatically on startup; guests just run the single generated file `deploy/ca/dist/install-ca.bat` (no administrator needed). See `docs/CERTIFICADOS.md`.
 
 ## Installation
 
@@ -90,7 +95,7 @@ php server/websocket-server.php
 - **Host (local)**: `http://localhost:8080`
 - **Guests (same Radmin VPN network)**: `http://<HOST_VPN_IP>:8080`
 
-Find the host's Radmin VPN IPv4 address with `ipconfig` (look for the Radmin VPN virtual adapter). See `docs/LOCAL_HOSTING.md` for the full step-by-step guide, including Windows Firewall rules for TCP ports `8080` and `8081`.
+Find the host's Radmin VPN IPv4 address with `ipconfig` (look for the Radmin VPN virtual adapter). See `docs/GUIA-INICIALIZACAO.md` for the startup guide and troubleshooting, and `docs/LOCAL_HOSTING.md` for firewall rules on TCP ports `8080` and `8081`.
 
 ## Project Structure
 
@@ -109,7 +114,7 @@ grape/
 ├── server/websocket-server.php
 ├── bin/                     # start-host.bat (Windows)
 ├── deploy/                  # nginx-host.conf e serviço systemd
-├── docs/                    # LOCAL_HOSTING.md, TESTING.md, IMPLEMENTATION_SUMMARY.md
+├── docs/                    # GUIA-INICIALIZACAO.md, CERTIFICADOS.md, LOCAL_HOSTING.md, ...
 ├── logs/
 ├── vendor/
 ├── .env.example             # Variáveis de ambiente

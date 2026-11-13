@@ -33,7 +33,7 @@ CREATE TABLE `room_participants` (
     `room_id` BIGINT UNSIGNED NOT NULL,
     `session_id` VARCHAR(64) NOT NULL,
     `display_name` VARCHAR(50) NOT NULL,
-    `avatar_data` TEXT NULL,
+    `avatar_data` MEDIUMTEXT NULL,
     `joined_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `left_at` TIMESTAMP NULL DEFAULT NULL,
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,

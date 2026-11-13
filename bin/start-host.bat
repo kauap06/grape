@@ -15,17 +15,29 @@ set PROJECT_DIR=%CD%
 echo Project root: %PROJECT_DIR%
 
 REM ============================================
-REM 1. Detect PHP executable (standalone install on PATH - not XAMPP)
+REM 0. Portable toolchain (no installation required)
+REM    portable\php (PHP + php.ini + CA bundle), portable\mariadb (data dir incl.),
+REM    portable\caddy, portable\composer\composer.phar
+REM ============================================
+set "PHP_DIR=%PROJECT_DIR%\portable\php"
+set "PATH=%PROJECT_DIR%\portable\php;%PROJECT_DIR%\portable\caddy;%PATH%"
+
+REM ============================================
+REM 1. Detect PHP executable (portable first, then PATH)
 REM ============================================
 set PHP_EXE=
 
-for /f "tokens=*" %%i in ('where php 2^>nul') do if not defined PHP_EXE set PHP_EXE=%%i
+if exist "%PROJECT_DIR%\portable\php\php.exe" set PHP_EXE=%PROJECT_DIR%\portable\php\php.exe
+
+if not defined PHP_EXE for /f "tokens=*" %%i in ('where php 2^>nul') do if not defined PHP_EXE set PHP_EXE=%%i
 
 if not defined PHP_EXE if exist "C:\php\php.exe" set PHP_EXE=C:\php\php.exe
 
 if not defined PHP_EXE (
-    echo ERROR: PHP not found. Install standalone PHP 8.2+ ^(https://windows.php.net/download/^)
-    echo        and add its folder to PATH - this project does not use XAMPP's PHP.
+    echo ERROR: PHP not found. Use the bundled portable copy at portable\php\php.exe
+    echo        ^(already included in the project - no installation needed^),
+    echo        or install standalone PHP 8.2+ and add its folder to PATH.
+    pause
     exit /b 1
 )
 
@@ -47,10 +59,12 @@ for /f "tokens=1,2 delims=." %%a in ("%PHP_VERSION%") do (
 
 if %MAJOR% LSS 8 (
     echo ERROR: PHP 8.2+ required, found %PHP_VERSION%
+    pause
     exit /b 1
 )
 if %MAJOR% EQU 8 if %MINOR% LSS 2 (
     echo ERROR: PHP 8.2+ required, found %PHP_VERSION%
+    pause
     exit /b 1
 )
 
@@ -58,7 +72,15 @@ REM ============================================
 REM 2. Check Composer dependencies installed
 REM ============================================
 if not exist "%PROJECT_DIR%\vendor\autoload.php" (
-    echo ERROR: Composer dependencies not found. Run: composer install
+    if exist "%PROJECT_DIR%\portable\composer\composer.phar" (
+        echo Composer dependencies not found. Installing with portable Composer...
+        set COMPOSER_ALLOW_SUPERUSER=1
+        "%PHP_EXE%" "%PROJECT_DIR%\portable\composer\composer.phar" install --no-interaction --working-dir="%PROJECT_DIR%"
+    )
+)
+if not exist "%PROJECT_DIR%\vendor\autoload.php" (
+    echo ERROR: Composer dependencies not found and could not be installed.
+    pause
     exit /b 1
 )
 
@@ -68,49 +90,61 @@ REM ============================================
 if not exist "%PROJECT_DIR%\logs" mkdir "%PROJECT_DIR%\logs"
 
 REM ============================================
-REM 4. Detect and start MySQL/MariaDB (standalone, not XAMPP's).
-REM    If it's already running (e.g. installed as a Windows service by the
-REM    MySQL/MariaDB installer), it's reused as-is and nothing is started here.
+REM 4. Detect and start MariaDB/MySQL.
+REM    Prefers the bundled portable MariaDB (portable\mariadb, with its own
+REM    data dir - no installation, no Windows service). If port 3306 is already
+REM    in use (e.g. an installed service), it is reused as-is and nothing is
+REM    started here.
 REM ============================================
 echo.
-echo Checking MySQL (port 3306)...
+echo Checking MariaDB/MySQL (port 3306)...
 set MYSQL_ALREADY_RUNNING=0
->nul netstat -ano | findstr /C:":3306 "
+netstat -ano -p tcp | findstr /C:":3306 " | findstr /C:"LISTENING" >nul
 if not errorlevel 1 set MYSQL_ALREADY_RUNNING=1
 
+set MYSQLD_EXE=
+if exist "%PROJECT_DIR%\portable\mariadb\bin\mysqld.exe" set MYSQLD_EXE=%PROJECT_DIR%\portable\mariadb\bin\mysqld.exe
+if not defined MYSQLD_EXE for /f "tokens=*" %%i in ('where mysqld 2^>nul') do if not defined MYSQLD_EXE set MYSQLD_EXE=%%i
+set MYSQLD_PORTABLE=0
+if defined MYSQLD_EXE if "%MYSQLD_EXE%" == "%PROJECT_DIR%\portable\mariadb\bin\mysqld.exe" set MYSQLD_PORTABLE=1
+
 if %MYSQL_ALREADY_RUNNING% EQU 1 (
-    echo MySQL already running on port 3306 - reusing it.
+    echo MariaDB/MySQL already running on port 3306 - reusing it.
 ) else (
-    set MYSQLD_EXE=
-    for /f "tokens=*" %%i in ('where mysqld 2^>nul') do if not defined MYSQLD_EXE set MYSQLD_EXE=%%i
-
     if not defined MYSQLD_EXE (
-        echo AVISO: mysqld nao encontrado no PATH.
-        echo         Instale o MySQL ou o MariaDB ^(standalone, sem XAMPP^) e adicione a pasta
-        echo         "bin" dele ao PATH, ou instale-o como servico do Windows e inicie-o antes
-        echo         de rodar este script. Download:
-        echo           MySQL:   https://dev.mysql.com/downloads/mysql/
-        echo           MariaDB: https://mariadb.org/download/
+        echo AVISO: mysqld nao encontrado ^(nem em portable\mariadb, nem no PATH^).
+        echo         O projeto ja traz um MariaDB portavel em portable\mariadb -
+        echo         restaure-o se ele foi removido.
     ) else (
-        echo Starting MySQL: %MYSQLD_EXE%
-        start "Grape MySQL (3306)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
+        REM Portable MariaDB: initialize the bundled data dir on first run
+        if %MYSQLD_PORTABLE% EQU 1 if not exist "%PROJECT_DIR%\portable\mariadb\data\mysql" (
+            echo Initializing portable MariaDB data directory ^(first run only^)...
+            "%PROJECT_DIR%\portable\mariadb\bin\mariadb-install-db.exe" --datadir="%PROJECT_DIR%\portable\mariadb\data" --default-user
+        )
 
-        REM Wait for MySQL to accept connections on 3306 (up to ~15s)
+        echo Starting MariaDB/MySQL: %MYSQLD_EXE%
+        if %MYSQLD_PORTABLE% EQU 1 (
+            start "Grape MariaDB (3306)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" --datadir="%PROJECT_DIR%\portable\mariadb\data" --console > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
+        ) else (
+            start "Grape MySQL (3306)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
+        )
+
+        REM Wait for MariaDB/MySQL to accept connections on 3306 (up to ~15s)
         set MYSQL_STARTED=0
         for /l %%n in (1,1,15) do (
             if !MYSQL_STARTED! EQU 0 (
-                >nul netstat -ano | findstr /C:":3306 "
+            netstat -ano -p tcp | findstr /C:":3306 " | findstr /C:"LISTENING" >nul
                 if not errorlevel 1 (
                     set MYSQL_STARTED=1
                 ) else (
-                    timeout /t 1 /nobreak >nul
+                    ping -n 2 -w 1000 127.0.0.1 >nul 2>&1
                 )
             )
         )
         if !MYSQL_STARTED! EQU 0 (
-            echo AVISO: MySQL nao respondeu na porta 3306 apos 15s. Veja logs\mysql.log
+            echo AVISO: MariaDB/MySQL nao respondeu na porta 3306 apos 15s. Veja logs\mysql.log
         ) else (
-            echo MySQL is up on port 3306.
+            echo MariaDB/MySQL is up on port 3306.
         )
     )
 )
@@ -119,16 +153,24 @@ REM ============================================
 REM 5. Check ports 8080 and 8081 are free
 REM ============================================
 echo Checking port 8080 (HTTP)...
->nul netstat -ano | findstr /C:":8080 "
+netstat -ano -p tcp | findstr /C:":8080 " | findstr /C:"LISTENING" >nul
 if not errorlevel 1 (
     echo ERROR: Port 8080 is already in use. Free it and try again.
+    echo ^(Dica: pode ser um Grape da rodada anterior - feche as janelas
+    echo  "Grape HTTP (8080)" / "Grape WebSocket (8081)" ou rode:
+    echo      taskkill /F /IM php.exe^)
+    pause
     exit /b 1
 )
 
 echo Checking port 8081 (WebSocket)...
->nul netstat -ano | findstr /C:":8081 "
+netstat -ano -p tcp | findstr /C:":8081 " | findstr /C:"LISTENING" >nul
 if not errorlevel 1 (
     echo ERROR: Port 8081 is already in use. Free it and try again.
+    echo ^(Dica: pode ser um Grape da rodada anterior - feche as janelas
+    echo  "Grape HTTP (8080)" / "Grape WebSocket (8081)" ou rode:
+    echo      taskkill /F /IM php.exe^)
+    pause
     exit /b 1
 )
 
@@ -172,8 +214,11 @@ if not errorlevel 1 (
 )
 
 REM HTTPS (Caddy) - necessario para camera, microfone e compartilhamento de tela via Radmin VPN
-REM Caddy instalado via webi fica em %USERPROFILE%\.local\bin
+REM Caddy portavel: portable\caddy\caddy.exe; fallback: instalado via webi em %USERPROFILE%\.local\bin
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+
+set CADDY_EXE=
+if exist "%PROJECT_DIR%\portable\caddy\caddy.exe" set CADDY_EXE=%PROJECT_DIR%\portable\caddy\caddy.exe
 
 REM Mata qualquer caddy.exe que tenha sobrado de uma rodada anterior (janela
 REM fechada sem encerrar o processo, Ctrl+C que nao propagou, etc.). Sem isso,
@@ -182,17 +227,41 @@ REM deles responde de verdade - o outro so acumula log vazio e confunde.
 taskkill /F /IM caddy.exe >nul 2>&1
 
 set CADDY_STARTED=0
-where caddy >nul 2>&1
-if errorlevel 1 (
-    echo AVISO: Caddy nao encontrado. Sem HTTPS, camera/microfone/tela nao funcionam para convidados.
-    echo Instale com: curl.exe https://webi.ms/caddy ^| powershell
-) else (
-    start "Grape HTTPS (Caddy)" /D "%PROJECT_DIR%" cmd /c "caddy run --config deploy\Caddyfile > logs\caddy.log 2>&1"
+if defined CADDY_EXE (
+    start "Grape HTTPS (Caddy)" /D "%PROJECT_DIR%" cmd /c ""%CADDY_EXE%" run --config deploy\Caddyfile > logs\caddy.log 2>&1"
     set CADDY_STARTED=1
+) else (
+    where caddy >nul 2>&1
+    if errorlevel 1 (
+        echo AVISO: Caddy nao encontrado. Sem HTTPS, camera/microfone/tela nao funcionam para convidados.
+        echo Restaure portable\caddy\caddy.exe ^(bundled com o projeto^).
+    ) else (
+        start "Grape HTTPS (Caddy)" /D "%PROJECT_DIR%" cmd /c "caddy run --config deploy\Caddyfile > logs\caddy.log 2>&1"
+        set CADDY_STARTED=1
+    )
 )
 
 REM Give servers time to start
-timeout /t 3 /nobreak >nul
+ping -n 4 -w 1000 127.0.0.1 >nul 2>&1
+
+REM ============================================
+REM 6b. Confia na CA do Caddy no Windows (usuario atual, sem admin) para o
+REM     navegador abrir https://<IP> sem aviso de certificado - sem isso o
+REM     Chrome bloqueia camera/microfone/tela. Idempotente: rodar de novo nao
+REM     muda nada. Tambem deixa deploy\ca\dist\caddy-root.crt para os convidados.
+REM ============================================
+if exist "%PROJECT_DIR%\deploy\ca\install-ca.bat" (
+    call "%PROJECT_DIR%\deploy\ca\install-ca.bat" /silent
+) else (
+    echo AVISO: deploy\ca\install-ca.bat nao encontrado - o navegador pode avisar
+    echo        sobre o certificado em https://^<IP^>.
+)
+
+REM Gera deploy\ca\dist\install-ca.bat: arquivo UNICO para os convidados,
+REM com o certificado do host embutido (sem precisar enviar .crt).
+if exist "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" (
+    call "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" >nul 2>&1
+)
 
 REM ============================================
 REM 7. Verify services started
@@ -222,15 +291,21 @@ echo   Home page:     http://localhost:8080
 echo   WebSocket:     ws://localhost:8081
 echo.
 echo Radmin VPN access (other users in the same VPN network):
-echo   Link de convite: http://%RADMIN_IP%:8080/?code=CODIGO_DA_SALA
+echo   Link de convite: https://%RADMIN_IP%/?code=CODIGO_DA_SALA
 echo   Home page:     https://%RADMIN_IP%   ^(HTTPS: libera camera, microfone e tela^)
-echo   ^(aceitar o aviso de certificado na primeira vez^)
+echo   Alternativo:   http://%RADMIN_IP%:8080/?code=CODIGO_DA_SALA   ^(sem HTTPS^)
+echo   ^(certificado ja confiado neste PC automaticamente^)
 echo.
 echo How to find the host's Radmin VPN IPv4 address:
 echo   1. Open Command Prompt
 echo   2. Run: ipconfig
 echo   3. Look for the adapter "Radmin Virtual Network Adapter" (or similar)
 echo   4. Note the IPv4 Address (e.g. 26.x.x.x)
+echo.
+echo Certificate: a CA do Caddy foi confiada neste PC automaticamente.
+echo   Para os convidados nao verem aviso de certificado, envie UM arquivo:
+ echo     deploy\ca\dist\install-ca.bat
+ echo   ^(certificado embutido - o convidado so da duplo clique, sem admin^)
 echo.
 echo Logs:
 echo   MySQL:      %PROJECT_DIR%\logs\mysql.log
@@ -239,8 +314,8 @@ echo   WebSocket:  %PROJECT_DIR%\logs\websocket.log
 echo   HTTPS:      %PROJECT_DIR%\logs\caddy.log
 echo.
 echo Services run in separate windows titled:
-echo   "Grape MySQL (3306)", "Grape HTTP (8080)", "Grape WebSocket (8081)" and "Grape HTTPS (Caddy)"
-echo   (MySQL window only appears if this script started it; it's skipped if MySQL was already running)
+echo   "Grape MariaDB (3306)", "Grape HTTP (8080)", "Grape WebSocket (8081)" and "Grape HTTPS (Caddy)"
+echo   ^(MariaDB window only appears if this script started it; it's skipped if a server was already running on 3306^)
 echo.
 echo To stop: close each service window (or press Ctrl+C inside them).
 echo ============================================

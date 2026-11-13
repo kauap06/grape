@@ -159,6 +159,13 @@ class SignalingServer implements MessageComponentInterface
         }
         $displayName = (string) $displayName;
 
+        // Avatar maior que a coluna faria o INSERT falhar (SQLSTATE 22001 / 1406)
+        // e o join nunca seria confirmado. Descarta o avatar, nao a entrada na sala.
+        if (is_string($avatarData) && strlen($avatarData) > 8 * 1024 * 1024) {
+            error_log("Avatar de {$sessionId} ignorado: " . strlen($avatarData) . " bytes (limite 8MB)");
+            $avatarData = null;
+        }
+
         if (empty($roomCode) || empty($sessionId)) {
             $this->sendError($conn, 'INVALID_PAYLOAD', 'Room code and session ID required');
             return;

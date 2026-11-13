@@ -22,7 +22,12 @@ deploy/ca/
 ├── generate-root-ca.bat  # wrappers .bat equivalentes (via Git Bash)
 ├── issue-cert.bat
 ├── renew-cert.bat
-└── dist/                 # cópia do certificado PÚBLICO da CA, para distribuir/instalar
+├── install-ca.bat        # instala a CA do Caddy (ou a grape-root.crt) no Windows, sem admin
+├── guest-installer-template.bat  # modelo do instalador de convidado
+├── make-guest-installer.bat      # gera dist\install-ca.bat (arquivo único, cert embutido)
+├── make-guest-installer.ps1      # apoio do gerador
+├── remove-ca.bat                 # desfaz a confianca (remove por thumbprint)
+└── dist/                 # arquivos para distribuir aos convidados (gerados)
 ```
 
 A chave privada da CA e as chaves/certificados emitidos **nunca** ficam dentro
