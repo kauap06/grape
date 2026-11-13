@@ -3,3 +3,9 @@ logs/*
 .env
 config/local.php
 vendor/
+portable/mariadb/data/
+portable/
+
+# Gerados por start-host/install-ca (especificos do host)
+deploy/ca/dist/caddy-root.crt
+deploy/ca/dist/install-ca.bat

@@ -33,7 +33,7 @@ CREATE TABLE `room_participants` (
     `room_id` BIGINT UNSIGNED NOT NULL,
     `session_id` VARCHAR(64) NOT NULL,
     `display_name` VARCHAR(50) NOT NULL,
-    `avatar_data` TEXT NULL,
+    `avatar_data` MEDIUMTEXT NULL,
     `joined_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `left_at` TIMESTAMP NULL DEFAULT NULL,
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
@@ -42,6 +42,16 @@ CREATE TABLE `room_participants` (
     FOREIGN KEY (`room_id`) REFERENCES `rooms`(`id`) ON DELETE CASCADE,
     INDEX `idx_room_active` (`room_id`, `is_active`),
     INDEX `idx_session` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Sessions table (cópia das sessões PHP, usada por SessionManager)
+CREATE TABLE IF NOT EXISTS `sessions` (
+    `id` VARCHAR(128) NOT NULL,
+    `data` MEDIUMTEXT NOT NULL,
+    `last_activity` INT UNSIGNED NOT NULL,
+    `created_at` INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_last_activity` (`last_activity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

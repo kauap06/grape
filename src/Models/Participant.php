@@ -25,47 +25,62 @@ class Participant
         $this->roomId = (int)$data['room_id'];
         $this->sessionId = $data['session_id'];
         $this->displayName = $data['display_name'];
-        $this->avatarData = $data['avatar_data'];
+        $this->avatarData = $data['avatar_data'] ?? null;
         $this->joinedAt = $data['joined_at'];
-        $this->leftAt = $data['left_at'];
+        $this->leftAt = $data['left_at'] ?? null;
         $this->isActive = (bool)$data['is_active'];
-        $this->metadata = $data['metadata'] ? json_decode($data['metadata'], true) : null;
+        $this->metadata = !empty($data['metadata']) ? json_decode($data['metadata'], true) : null;
     }
 
     public static function create(int $roomId, string $sessionId, string $displayName, ?string $avatarData = null, array $metadata = []): self
     {
         $db = Database::getInstance();
 
-        // Serialize joins on this room so simultaneous join requests cannot
-        // push the active participant count above max_participants.
+        // Serializa os joins da sala para que requisições simultâneas
+        // não ultrapassem max_participants.
         $db->beginTransaction();
         try {
-            // Re-check room capacity inside the transaction (locks the room row).
             $roomStmt = $db->prepare("SELECT `max_participants` FROM `rooms` WHERE `id` = ? FOR UPDATE");
             $roomStmt->execute([$roomId]);
-            $maxParticipants = (int)($roomStmt->fetchColumn() ?? 10);
+            $maxParticipants = (int)($roomStmt->fetchColumn() ?: 10);
+
+            $existing = self::findByRoomAndSession($roomId, $sessionId);
+
+            // Já está ativo: só atualiza os dados
+            if ($existing && $existing->isActive) {
+                $existing->update([
+                    'display_name' => $displayName,
+                    'avatar_data'  => $avatarData,
+                    'metadata'     => $metadata,
+                ]);
+                $db->commit();
+                return self::findById($existing->id);
+            }
 
             $countStmt = $db->prepare("SELECT COUNT(*) FROM `room_participants` WHERE `room_id` = ? AND `is_active` = 1");
             $countStmt->execute([$roomId]);
             $activeCount = (int)$countStmt->fetchColumn();
 
             if ($activeCount >= $maxParticipants) {
-                // Do not roll back here; the catch block rolls back once.
                 throw new \RuntimeException('Room is full');
             }
 
-            // Check if already exists and active
-            $existing = self::findByRoomAndSession($roomId, $sessionId);
-            if ($existing && $existing->isActive) {
-                // Update existing
-                $existing->update(['display_name' => $displayName, 'avatar_data' => $avatarData, 'metadata' => $metadata]);
+            // Já existiu e saiu: reativa o mesmo registro (evita erro de chave única)
+            if ($existing) {
+                $existing->update([
+                    'display_name' => $displayName,
+                    'avatar_data'  => $avatarData,
+                    'metadata'     => $metadata,
+                    'is_active'    => true,
+                    'left_at'      => null,
+                ]);
                 $db->commit();
-                return $existing;
+                return self::findById($existing->id);
             }
 
-            // Create new
+            // Novo participante
             $stmt = $db->prepare(
-                "INSERT INTO `room_participants` (`room_id`, `session_id`, `display_name`, `avatar_data`, `metadata`) 
+                "INSERT INTO `room_participants` (`room_id`, `session_id`, `display_name`, `avatar_data`, `metadata`)
                  VALUES (?, ?, ?, ?, ?)"
             );
             $stmt->execute([
@@ -80,7 +95,9 @@ class Participant
             $db->commit();
             return self::findById($participantId);
         } catch (\Throwable $e) {
-            $db->rollBack();
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
             throw $e;
         }
     }
@@ -123,14 +140,22 @@ class Participant
 
     public function update(array $data): bool
     {
-        $allowed = ['display_name', 'avatar_data', 'metadata', 'is_active'];
+        $allowed = ['display_name', 'avatar_data', 'metadata', 'is_active', 'left_at'];
         $fields = [];
         $values = [];
 
         foreach ($data as $key => $value) {
             if (in_array($key, $allowed, true)) {
                 $fields[] = "`$key` = ?";
-                $values[] = $value === null ? null : (is_array($value) ? json_encode($value) : $value);
+                if ($value === null) {
+                    $values[] = null;
+                } elseif (is_array($value)) {
+                    $values[] = json_encode($value);
+                } elseif (is_bool($value)) {
+                    $values[] = (int)$value;
+                } else {
+                    $values[] = $value;
+                }
             }
         }
 

@@ -262,8 +262,9 @@ function handleAvatarUpload(e) {
   }
   
   const reader = new FileReader();
-  reader.onload = (event) => {
-    state.avatar = { type: 'custom', data: event.target.result };
+  reader.onload = async (event) => {
+    const reduced = await Utils.shrinkImageDataUrl(event.target.result);
+    state.avatar = { type: 'custom', data: reduced };
     updateAvatarPreview();
     saveProfileToStorage();
     Toast.success('Avatar personalizado salvo!');

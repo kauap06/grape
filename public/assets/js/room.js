@@ -4,7 +4,7 @@
  * (câmera e/ou tela de quem está selecionado).
  */
 
-import { Logger, Toast, Modal, Storage, Devices } from './utils.js';
+import { Logger, Toast, Modal, Storage, Devices, Utils } from './utils.js';
 
 // ============================================
 // Constantes
@@ -47,6 +47,9 @@ const state = {
   wsConnected: false,
   wsReconnectAttempts: 0,
   maxReconnectAttempts: 5,
+  wsCandidates: [], // URLs tentadas em ordem (porta direta x proxy /ws)
+  wsCandidateIndex: 0,
+  pendingAvatarUpdate: false, // foto reduzida antes do 'joined'
   connection: 'connecting', // connecting | connected | disconnected
   joinedAt: null,
 
@@ -169,10 +172,61 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializeWebSocket();
   initializeLocalMedia();
 
+  // Voltar para a aba (ou reconectar a rede) tenta na hora, sem esperar o backoff
+  const retryNow = () => {
+    if (state.wsConnected) return;
+    state.wsReconnectAttempts = 0;
+    initializeWebSocket();
+  };
+  window.addEventListener('online', retryNow);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) retryNow();
+  });
+  // Roda em segundo plano: nunca atrasa a conexão (uma foto grande pode
+  // demorar para decodificar) e avisa a sala quando terminar.
+  shrinkStoredAvatar();
+
   Modal.init();
 
   Logger.log('Room page ready');
 });
+
+// ---- Avatares -------------------------------------------------------------
+// Avatares salvos antes desta correção podem ter centenas de KB (ou mais).
+// O servidor WebSocket recusa mensagens acima de 1MB e o join nunca era
+// confirmado; aqui a foto antiga é reduzida e reenviada à sala.
+async function shrinkStoredAvatar() {
+  const avatar = state.avatar;
+  const isPhoto = typeof avatar === 'string' && avatar.startsWith('data:image/');
+  if (!isPhoto || avatar.length <= 200 * 1024) return;
+
+  const reduced = await Utils.shrinkImageDataUrl(avatar);
+  if (!reduced || reduced === avatar || reduced.length >= avatar.length) return;
+
+  state.avatar = reduced;
+  const profile = Storage.get('profile', {});
+  Storage.set('profile', { ...profile, avatar: { type: 'custom', data: reduced } });
+  renderAll();
+  Logger.log(`Avatar antigo reduzido de ${avatar.length} para ${reduced.length} bytes`);
+
+  // Atualiza a sala com a versão leve (se já entrou)
+  if (state.wsConnected) {
+    sendWebSocketMessage('profile-update', {
+      display_name: state.displayName,
+      avatar_data: reduced
+    });
+  } else {
+    state.pendingAvatarUpdate = true;
+  }
+}
+
+// O avatar viaja no 'join'; acima de 1MB o servidor fecha a conexão, então
+// manda a sala sem foto primeiro e completa depois com o profile-update.
+function avatarForJoin() {
+  const avatar = state.avatar;
+  if (typeof avatar !== 'string') return '';
+  return avatar.length <= 200 * 1024 ? avatar : '';
+}
 
 // ---- Avatares -------------------------------------------------------------
 // O servidor guarda o avatar como texto: data URL (foto) ou JSON {type:'gradient', color}.
@@ -587,8 +641,9 @@ function onProfilePhotoSelected(e) {
     return;
   }
   const reader = new FileReader();
-  reader.onload = (ev) => {
-    profileDraft.avatar = { type: 'custom', data: ev.target.result };
+  reader.onload = async (ev) => {
+    const reduced = await Utils.shrinkImageDataUrl(ev.target.result);
+    profileDraft.avatar = { type: 'custom', data: reduced };
     renderProfileDraft();
   };
   reader.readAsDataURL(file);
@@ -664,9 +719,46 @@ function saveSettings() {
 // ============================================
 // WebSocket Connection
 // ============================================
+function buildWebSocketCandidates() {
+  const configured = window.APP_CONFIG?.wsUrl || '';
+  const isHttpsPage = location.protocol === 'https:';
+  const hostname = location.hostname;
+
+  const list = [];
+  const add = (url) => {
+    if (!url) return;
+    // Página HTTPS não pode abrir ws:// (mixed content bloqueado pelo navegador).
+    if (isHttpsPage && url.startsWith('ws:')) return;
+    if (!list.includes(url)) list.push(url);
+  };
+
+  // 1) O que o servidor calculou (mesma origem /ws em HTTPS, porta 8081 em HTTP)
+  add(configured);
+
+  if (isHttpsPage) {
+    add(`wss://${location.host}/ws`);
+  } else {
+    add(`ws://${hostname}:8081`);
+    // 3) Proxy HTTPS do Caddy - útil quando a porta 8081 está bloqueada
+    add(`wss://${hostname}/ws`);
+  }
+
+  return list;
+}
+
 function initializeWebSocket() {
-  const wsUrl = window.APP_CONFIG?.wsUrl || `ws://${location.hostname}:8081`;
-  updateConnectionStatus('connecting');
+  if (!state.wsCandidates.length) {
+    state.wsCandidates = buildWebSocketCandidates();
+    const saved = (() => { try { return sessionStorage.getItem('grape_ws_url'); } catch (e) { return null; } })();
+    if (saved && state.wsCandidates.includes(saved)) {
+      state.wsCandidates = [saved, ...state.wsCandidates.filter(u => u !== saved)];
+    }
+    state.wsCandidateIndex = 0;
+  }
+
+  const wsUrl = state.wsCandidates[state.wsCandidateIndex];
+  updateConnectionStatus(state.wsReconnectAttempts ? 'disconnected' : 'connecting');
+  Logger.log(`WebSocket connecting to ${wsUrl}`);
 
   try {
     state.ws = new WebSocket(wsUrl);
@@ -676,6 +768,7 @@ function initializeWebSocket() {
       Logger.log('WebSocket connected');
       state.wsConnected = true;
       state.wsReconnectAttempts = 0;
+      try { sessionStorage.setItem('grape_ws_url', wsUrl); } catch (e) { /* modo privado */ }
       updateConnectionStatus('connected');
       joinRoomViaWebSocket();
     };
@@ -684,15 +777,15 @@ function initializeWebSocket() {
       handleWebSocketMessage(JSON.parse(event.data));
     };
 
-    state.ws.onclose = () => {
-      Logger.log('WebSocket disconnected');
+    state.ws.onclose = (event) => {
+      Logger.log(`WebSocket disconnected (${wsUrl}) code=${event.code}`);
       state.wsConnected = false;
       updateConnectionStatus('disconnected');
       scheduleReconnect();
     };
 
     state.ws.onerror = (error) => {
-      Logger.error('WebSocket error:', error);
+      Logger.error('WebSocket error:', wsUrl, error);
     };
   } catch (e) {
     Logger.error('Failed to create WebSocket:', e);
@@ -701,14 +794,19 @@ function initializeWebSocket() {
 }
 
 function scheduleReconnect() {
-  if (state.wsReconnectAttempts >= state.maxReconnectAttempts) {
-    Toast.error('Não foi possível reconectar. Recarregue a página.');
-    return;
+  // Alterna entre os endereços a cada falha e recomeça do primeiro no fim,
+  // em vez de desistir e ficar parado em "Reconectando...".
+  if (state.wsCandidates.length > 1) {
+    state.wsCandidateIndex = (state.wsCandidateIndex + 1) % state.wsCandidates.length;
   }
 
   state.wsReconnectAttempts++;
-  const delay = Math.min(1000 * Math.pow(2, state.wsReconnectAttempts), 30000);
+  const delay = Math.min(300 * Math.pow(1.5, state.wsReconnectAttempts), 5000);
   Logger.log(`Reconnecting in ${delay}ms (attempt ${state.wsReconnectAttempts})`);
+
+  if (state.wsReconnectAttempts === state.maxReconnectAttempts + 1) {
+    Toast.error('Não foi possível conectar ao servidor de sinalização. Verifique se o host abriu as portas 8080/8081 e 443.', 8000);
+  }
 
   setTimeout(() => {
     if (!state.wsConnected) {
@@ -726,7 +824,7 @@ function joinRoomViaWebSocket() {
       room_code: state.inviteCode,
       session_id: state.sessionId,
       display_name: state.displayName,
-      avatar_data: state.avatar,
+      avatar_data: avatarForJoin(),
       // Chaves planas: são as mesmas que 'media-state' atualiza depois
       metadata: mediaMetadata()
     }
@@ -788,6 +886,15 @@ function handleWebSocketMessage(message) {
 
 function handleJoined(payload) {
   Logger.log('Joined room:', payload.room.name);
+
+  // A foto antiga foi reduzida antes de a conexão abrir: envia agora
+  if (state.pendingAvatarUpdate) {
+    state.pendingAvatarUpdate = false;
+    sendWebSocketMessage('profile-update', {
+      display_name: state.displayName,
+      avatar_data: state.avatar
+    });
+  }
 
   state.roomName = payload.room.name;
   state.maxParticipants = payload.room.max_participants;
@@ -935,7 +1042,9 @@ function formatClock(totalSeconds) {
 function refreshStatusText() {
   if (!elements.statusText) return;
   if (state.connection === 'disconnected') {
-    elements.statusText.textContent = 'Reconectando...';
+    elements.statusText.textContent = state.wsReconnectAttempts
+      ? `Reconectando... (${state.wsReconnectAttempts})`
+      : 'Reconectando...';
   } else if (state.connection === 'connected' && state.joinedAt) {
     elements.statusText.textContent = formatClock(Math.floor((Date.now() - state.joinedAt) / 1000));
   } else {
