@@ -36,13 +36,8 @@ certutil -user -addstore -f ROOT "%TMP_CRT%" >nul 2>&1
 if errorlevel 1 goto :erro
 
 del "%TMP_PEM%" "%TMP_CRT%" >nul 2>&1
-echo.
-echo Pronto! Este PC agora confia no certificado do Grape.
-echo Feche e reabra o navegador se ele estiver aberto.
+echo Pronto! Este PC agora confia no certificado do Grape. Feche e reabra o navegador.
 echo Agora abra o link da sala que o host enviou ^(comeca com https://^).
-echo.
-echo Para remover depois:
-echo   deploy\ca\remove-ca.bat
 pause
 exit /b 0
 

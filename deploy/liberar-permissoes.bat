@@ -33,9 +33,6 @@ for %%B in ("Google\Chrome" "Microsoft\Edge") do (
 
 echo.
 echo Pronto. Feche TODAS as janelas do navegador e abra de novo.
-echo Confira em chrome://policy ^(ou edge://policy^) se as politicas aparecem.
-echo O navegador vai mostrar "gerenciado pela sua organizacao": e normal.
-echo O seletor de tela/janela do compartilhamento continua aparecendo por seguranca do navegador.
-echo.
-echo Para remover depois, rode: reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /f ^& reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /f
+echo Confira em chrome://policy ^(ou edge://policy^). O navegador mostrara "gerenciado pela sua organizacao": e normal.
+echo Para remover depois: reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /f ^& reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /f
 pause

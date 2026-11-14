@@ -27,6 +27,9 @@ class SignalingServer implements MessageComponentInterface
     /** @var array<int, array{last_ping: int, pong_received: bool}> */
     protected array $connectionHealth = [];
 
+    /** @var array<int, array{window_start: int, count: int}> Janela deslizante por conexao (security.rate_limit.websocket) */
+    protected array $rateLimitBuckets = [];
+
     public function __construct(LoopInterface $loop)
     {
         // Start heartbeat checker
@@ -131,7 +134,7 @@ class SignalingServer implements MessageComponentInterface
             error_log("Cleanup error on close: " . get_class($e) . ": " . $e->getMessage()
                 . " em " . $e->getFile() . ":" . $e->getLine());
         }
-        unset($this->connections[$resourceId], $this->connectionHealth[$resourceId]);
+        unset($this->connections[$resourceId], $this->connectionHealth[$resourceId], $this->rateLimitBuckets[$resourceId]);
         error_log("WebSocket connection closed: $resourceId");
     }
 
@@ -519,10 +522,34 @@ class SignalingServer implements MessageComponentInterface
         ]);
     }
 
+    /**
+     * Janela fixa por conexao: no maximo N mensagens por janela de W segundos.
+     * Valores em security.rate_limit.websocket {messages, window}; zerados desativam.
+     */
     protected function checkRateLimit(int $resourceId): bool
     {
-        // Simple in-memory rate limiting
-        // In production, use Redis or similar
+        $messages = (int) Config::get('security.rate_limit.websocket.messages', 100);
+        $window = (int) Config::get('security.rate_limit.websocket.window', 60);
+        if ($messages <= 0 || $window <= 0) {
+            return true; // desativado por configuracao
+        }
+
+        $now = time();
+        if (!isset($this->rateLimitBuckets[$resourceId])) {
+            $this->rateLimitBuckets[$resourceId] = ['window_start' => $now, 'count' => 0];
+        }
+
+        $bucket = &$this->rateLimitBuckets[$resourceId];
+        if (($now - $bucket['window_start']) >= $window) {
+            $bucket['window_start'] = $now;
+            $bucket['count'] = 0;
+        }
+
+        $bucket['count']++;
+        if ($bucket['count'] > $messages) {
+            error_log("WebSocket rate limit exceeded: connection $resourceId ({$bucket['count']} msgs in window)");
+            return false;
+        }
         return true;
     }
 

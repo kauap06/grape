@@ -1,13 +1,63 @@
-# Gaming Calls - Raiz do projeto (Apache/XAMPP)
-# O ideal é apontar o DocumentRoot para /public. Se o projeto estiver direto em
-# htdocs/gaming-calls, este arquivo encaminha tudo para a pasta public/ e
-# bloqueia o acesso às pastas internas.
-Options -Indexes
+# Grape - Raiz do projeto (Apache/XAMPP)
+#
+# O ideal e apontar o DocumentRoot direto para /public. Se o projeto estiver em
+# htdocs/grape, este arquivo encaminha tudo para public/ e bloqueia o acesso
+# as pastas internas.
+#
+# Defesa em profundidade: as regras abaixo valem mesmo que alguem aponte o
+# DocumentRoot para a raiz do projeto por engano.
 
+Options -Indexes
+Options -MultiViews
+
+# ---------------------------------------------------------------------------
+# 1. Arquivos e pastas que nunca devem ser servidos
+# ---------------------------------------------------------------------------
+# .git (historico completo + config com remotes), .env, .htaccess/.htpasswd,
+# dotfiles em geral, arquivos de editor e de backup.
+<FilesMatch "(^\.|~$|\.(bak|old|orig|save|swp|sql|log|ini|md|dist|zip|tar|gz|phar)$)">
+    Require all denied
+</FilesMatch>
+
+# Composer / npm: revelam dependencias e scripts de build
+<FilesMatch "^(composer\.(json|lock|phar)|package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml)$">
+    Require all denied
+</FilesMatch>
+
+# ---------------------------------------------------------------------------
+# 2. Pastas internas (nunca acessiveis pela web)
+# ---------------------------------------------------------------------------
+# docs/ entra aqui de proposito: os guias citam IPs, caminhos e procedimentos
+# internos do host.
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(config|src|database|server|vendor|deploy|bin|docs|logs)(/|$) - [F,L]
+
+    # .git/portable/logs/... barrados antes de qualquer rewrite
+    RewriteRule (^|/)\. - [F,L]
+    RewriteRule ^(config|src|database|server|vendor|deploy|bin|docs|logs|portable|tests?|node_modules)(/|$) - [F,L]
+
+    # Raiz -> public/
     RewriteRule ^$ public/ [L]
     RewriteCond %{REQUEST_URI} !^/?public/
     RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Fallback quando mod_rewrite nao esta ativo: nega as pastas sensiveis
+<IfModule !mod_rewrite.c>
+    RedirectMatch 404 ^/(config|src|database|server|vendor|deploy|bin|docs|logs|portable|tests?|\.git)(/|$)
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 3. Cabecalhos de seguranca
+# ---------------------------------------------------------------------------
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+    # HSTS: so faz sentido sob HTTPS. Comente em hosts que servem HTTP puro.
+    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header always unset X-Powered-By
+    Header unset Server
 </IfModule>

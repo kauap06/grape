@@ -16,6 +16,7 @@ use React\Socket\SocketServer;
 use React\EventLoop\Factory;
 use GamingCalls\Config\Config;
 use GamingCalls\Server\SignalingServer;
+use GamingCalls\Server\OriginCheckMiddleware;
 use GamingCalls\Database\Database;
 
 // Envia os error_log() para um arquivo que sempre existe (o php.ini do XAMPP aponta para uma pasta inexistente)
@@ -41,7 +42,16 @@ $signalingServer = new SignalingServer($loop);
 // Nota: o Ratchet (v0.4.x) limita mensagens a 1 MB e não expõe setter para
 // isso; por isso o cliente reduz o avatar antes de enviar (utils.js).
 $webSocketServer = new WsServer($signalingServer);
-$httpServer = new HttpServer($webSocketServer);
+
+// Anti-CSWSH: valida o cabecalho Origin do handshake antes do upgrade.
+// websocket.check_origin (padrao true) + websocket.allowed_origins.
+$originCheck = new OriginCheckMiddleware(
+    $webSocketServer,
+    (bool) Config::get('websocket.check_origin', true),
+    (array) Config::get('websocket.allowed_origins', [])
+);
+
+$httpServer = new HttpServer($originCheck);
 
 // Create socket server
 $socket = new SocketServer("{$wsHost}:{$wsPort}", [], $loop);

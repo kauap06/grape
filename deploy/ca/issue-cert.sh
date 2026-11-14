@@ -9,7 +9,7 @@
 # guests will type in the browser - certificates are matched by SAN, not CN.
 #
 # Example (Radmin IP + localhost, matching deploy/Caddyfile):
-#   deploy/ca/issue-cert.sh radmin-host ip:26.22.182.86 dns:localhost ip:127.0.0.1
+#   deploy/ca/issue-cert.sh radmin-host ip:SEU-IP-RADMIN dns:localhost ip:127.0.0.1
 #
 # Output (valid 397 days, the browser-recommended maximum for server certs):
 #   $GRAPE_CA_DIR/issued/<name>/<name>.key   - leaf private key (keep this host-only)
@@ -25,7 +25,7 @@ require_root_ca
 
 if [[ $# -lt 2 ]]; then
     echo "Usage: $0 <name> <san> [san ...]" >&2
-    echo "  e.g.: $0 radmin-host ip:26.22.182.86 dns:localhost" >&2
+    echo "  e.g.: $0 radmin-host ip:SEU-IP-RADMIN dns:localhost" >&2
     exit 1
 fi
 

@@ -17,17 +17,9 @@ const state = {
     echoCancellation: true
   },
   availableAvatars: [
-    // Avatares padrão: cores sólidas e discretas
+    // Avatar padrão (sem foto): cor sólida discreta, apenas para o preview
     { type: 'gradient', color: '#52525b' },
-    { type: 'gradient', color: '#4d7c6f' },
-    { type: 'gradient', color: '#a07a3c' },
-    { type: 'gradient', color: '#a14b4b' },
-    { type: 'gradient', color: '#5b6b9a' },
-    { type: 'gradient', color: '#4a7f94' },
-    { type: 'gradient', color: '#8a5a7a' },
-    { type: 'gradient', color: '#6b7280' },
-  ],
-  selectedAvatarIndex: 0
+  ]
 };
 
 // ============================================
@@ -44,7 +36,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   cacheElements();
   loadPreferences();
   setupEventListeners();
-  renderAvatars();
   updateAvatarPreview();
   await loadDevices();
   
@@ -58,14 +49,12 @@ function cacheElements() {
   elements.displayName = document.getElementById('display-name');
   elements.avatarPreview = document.getElementById('avatar-preview');
   elements.avatarInitials = document.getElementById('avatar-initials');
-  elements.avatarOptions = document.getElementById('avatar-options');
   elements.avatarUpload = document.getElementById('avatar-upload');
   elements.customAvatarBtn = document.getElementById('custom-avatar-btn');
   elements.saveProfileBtn = document.getElementById('save-profile-btn');
   
   // Preference checkboxes
   elements.autoMute = document.getElementById('auto-mute');
-  elements.autoVideo = document.getElementById('auto-video');
   elements.noiseSuppression = document.getElementById('noise-suppression');
   elements.echoCancellation = document.getElementById('echo-cancellation');
   
@@ -89,8 +78,6 @@ function cacheElements() {
   
   // Settings preferences
   elements.compactMode = document.getElementById('compact-mode');
-  elements.showTimestamps = document.getElementById('show-timestamps');
-  elements.animationsEnabled = document.getElementById('animations-enabled');
   elements.videoQuality = document.getElementById('video-quality');
   elements.maxBitrate = document.getElementById('max-bitrate');
   elements.maxBitrateValue = document.getElementById('max-bitrate-value');
@@ -105,9 +92,13 @@ function setupEventListeners() {
   
   // Preferences
   elements.autoMute.addEventListener('change', () => savePreference('autoMute', elements.autoMute.checked));
-  elements.autoVideo.addEventListener('change', () => savePreference('autoVideo', elements.autoVideo.checked));
   elements.noiseSuppression.addEventListener('change', () => savePreference('noiseSuppression', elements.noiseSuppression.checked));
   elements.echoCancellation.addEventListener('change', () => savePreference('echoCancellation', elements.echoCancellation.checked));
+
+  // Modo compacto: aplica/reverte o preset das opções de interface
+  if (elements.compactMode) {
+    elements.compactMode.addEventListener('change', () => applyCompactMode(elements.compactMode.checked));
+  }
   
   // Room actions
   elements.createRoomBtn.addEventListener('click', createRoom);
@@ -160,15 +151,17 @@ function loadPreferences() {
     state.preferences.autoVideo = false;
     savePreference('autoVideo', false); // grava o perfil já com a marca de migração
   }
-  state.selectedAvatarIndex = saved.selectedAvatarIndex || 0;
-  
   // Apply to UI
   elements.displayName.value = state.displayName;
   elements.autoMute.checked = state.preferences.autoMute;
-  elements.autoVideo.checked = state.preferences.autoVideo;
   elements.noiseSuppression.checked = state.preferences.noiseSuppression;
   elements.echoCancellation.checked = state.preferences.echoCancellation;
-  
+
+  // Interface: o toggle do perfil aplica o que estiver salvo
+  const ui = Storage.get('uiPreferences', {});
+  elements.compactMode.checked = !!ui.compactMode;
+  applyCompactMode(!!ui.compactMode, true);
+
   // Update avatar preview
   updateAvatarPreview();
 }
@@ -182,6 +175,46 @@ function savePreference(key, value) {
   saveProfileToStorage();
 }
 
+// Modo compacto: interruptor único que troca a interface para um visual
+// minimalista (CSS em body.is-compact) e desliga timestamps/animações.
+// O snapshot guarda o que o usuário tinha, para o "desligar" restaurar.
+const COMPACT_PRESET = { showTimestamps: false, animationsEnabled: false };
+
+function applyCompactMode(enabled, silent = false) {
+  const ui = Storage.get('uiPreferences', {});
+
+  if (enabled) {
+    if (!ui.compactSnapshot) {
+      Storage.set('uiPreferences', {
+        ...ui,
+        compactSnapshot: {
+          showTimestamps: !!ui.showTimestamps,
+          animationsEnabled: ui.animationsEnabled !== false
+        }
+      });
+    }
+    document.body.classList.add('is-compact');
+    document.body.classList.add('no-animations');
+  } else {
+    const snap = ui.compactSnapshot;
+    if (snap) {
+      document.body.classList.toggle('no-animations', snap.animationsEnabled === false);
+    } else {
+      document.body.classList.remove('no-animations');
+    }
+    document.body.classList.remove('is-compact');
+  }
+
+  if (!silent) {
+    Storage.set('uiPreferences', {
+      ...Storage.get('uiPreferences', {}),
+      compactMode: enabled,
+      showTimestamps: enabled ? COMPACT_PRESET.showTimestamps : (ui.compactSnapshot?.showTimestamps ?? false),
+      animationsEnabled: enabled ? COMPACT_PRESET.animationsEnabled : (ui.compactSnapshot?.animationsEnabled ?? true)
+    });
+  }
+}
+
 function saveProfile() {
   saveDisplayName();
   saveProfileToStorage();
@@ -192,59 +225,26 @@ function saveProfileToStorage() {
   Storage.set('profile', {
     displayName: state.displayName,
     avatar: state.avatar,
-    selectedAvatarIndex: state.selectedAvatarIndex,
     preferences: state.preferences,
     cameraOffDefaultApplied: true
   });
 }
 
 function updateAvatarPreview() {
-  const avatar = state.avatar || state.availableAvatars[state.selectedAvatarIndex];
-  
+  // Sem foto: mostra as iniciais sobre a cor padrão. Com foto: mostra a imagem.
+  const avatar = (state.avatar && typeof state.avatar === 'object' && state.avatar.type === 'custom' && state.avatar.data)
+    ? state.avatar
+    : state.availableAvatars[0];
+
   if (avatar.type === 'custom' && avatar.data) {
     elements.avatarPreview.style.background = 'none';
     elements.avatarPreview.innerHTML = `<img src="${avatar.data}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
     elements.avatarInitials.textContent = '';
-  } else if (avatar.type === 'gradient') {
+  } else {
     elements.avatarPreview.style.background = avatar.color;
     elements.avatarPreview.innerHTML = '';
     elements.avatarInitials.textContent = state.displayName ? state.displayName[0].toUpperCase() : '?';
   }
-}
-
-function adjustColor(color, amount) {
-  const hex = color.replace('#', '');
-  const num = parseInt(hex, 16);
-  const r = Math.max(0, Math.min(255, (num >> 16) + amount));
-  const g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amount));
-  const b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
-  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
-}
-
-function renderAvatars() {
-  elements.avatarOptions.innerHTML = '';
-  
-  state.availableAvatars.forEach((avatar, index) => {
-    const option = document.createElement('div');
-    option.className = `avatar-option ${index === state.selectedAvatarIndex ? 'selected' : ''}`;
-    option.dataset.index = index;
-    option.style.background = avatar.color;
-    option.addEventListener('click', () => selectAvatar(index));
-    elements.avatarOptions.appendChild(option);
-  });
-}
-
-function selectAvatar(index) {
-  state.selectedAvatarIndex = index;
-  state.avatar = state.availableAvatars[index];
-  updateAvatarPreview();
-  
-  // Update selection UI
-  elements.avatarOptions.querySelectorAll('.avatar-option').forEach((el, i) => {
-    el.classList.toggle('selected', i === index);
-  });
-  
-  saveProfileToStorage();
 }
 
 function handleAvatarUpload(e) {
@@ -326,10 +326,9 @@ function saveSettings() {
   };
   
   Storage.set('devices', devices);
+
   Storage.set('uiPreferences', {
-    compactMode: elements.compactMode.checked,
-    showTimestamps: elements.showTimestamps.checked,
-    animationsEnabled: elements.animationsEnabled.checked,
+    ...Storage.get('uiPreferences', {}),
     videoQuality: elements.videoQuality.value,
     maxBitrate: parseInt(elements.maxBitrate.value)
   });

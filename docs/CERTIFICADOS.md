@@ -172,7 +172,7 @@ certificado.
 Rode **no PC do convidado** (não no host):
 
 ```bat
-deploy\ca\test-https.bat 26.22.182.86
+deploy\ca\test-https.bat SEU-IP-RADMIN
 ```
 
 Ele responde três coisas:

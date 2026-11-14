@@ -242,44 +242,74 @@ const Modal = {
 // ============================================
 const Storage = {
   prefix: 'gaming_calls_',
-  
+
+  // Preferências vindas do banco (injetadas pelo servidor em APP_CONFIG).
+  // Servem de fallback quando o localStorage está vazio: assim elas sobrevivem
+  // à limpeza de cache e à troca de origem (localhost <-> IP do Radmin).
+  // Normaliza para objeto: o PHP envia [] quando não há nada salvo, e um array
+  // descartaria as chaves string no JSON.stringify.
+  server: (window.APP_CONFIG.preferences && !Array.isArray(window.APP_CONFIG.preferences))
+    ? window.APP_CONFIG.preferences
+    : {},
+
+  timer: null,
+
   get(key, defaultValue = null) {
     try {
       const item = localStorage.getItem(this.prefix + key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
+      if (item !== null) return JSON.parse(item);
+    } catch { /* modo privado */ }
+    const remote = this.server[key];
+    return remote !== undefined && remote !== null ? remote : defaultValue;
   },
-  
+
   set(key, value) {
     try {
       localStorage.setItem(this.prefix + key, JSON.stringify(value));
-      return true;
     } catch (e) {
       Logger.error('Storage set error:', e);
-      return false;
     }
+    this.sync(key, value);
+    return true;
   },
-  
+
+  // Espelha no banco, agrupando gravações próximas numa única requisição.
+  sync(key, value) {
+    this.server[key] = value;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), 400);
+  },
+
+  flush() {
+    const token = window.APP_CONFIG.csrfToken;
+    if (!token) return;
+    try {
+      fetch(window.APP_CONFIG.baseUrl + '/api/preferences.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        credentials: 'same-origin',
+        body: JSON.stringify(this.server)
+      }).catch(() => { /* offline: o localStorage continua valendo */ });
+    } catch { /* ignore */ }
+  },
+
   remove(key) {
     try {
       localStorage.removeItem(this.prefix + key);
-      return true;
-    } catch {
-      return false;
-    }
+    } catch { /* ignore */ }
+    delete this.server[key];
+    this.flush();
+    return true;
   },
-  
+
   clear() {
     try {
       Object.keys(localStorage)
         .filter(k => k.startsWith(this.prefix))
         .forEach(k => localStorage.removeItem(k));
-      return true;
-    } catch {
-      return false;
-    }
+    } catch { /* ignore */ }
+    this.server = {};
+    return true;
   }
 };
 

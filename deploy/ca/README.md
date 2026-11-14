@@ -93,7 +93,7 @@ do Radmin VPN e/ou `localhost`. Eles vão para o SAN (Subject Alternative
 Name); é isso que o navegador valida, não o "nome" do certificado.
 
 ```bash
-deploy/ca/issue-cert.sh radmin-host ip:26.22.182.86 dns:localhost ip:127.0.0.1
+deploy/ca/issue-cert.sh radmin-host ip:SEU-IP-RADMIN dns:localhost ip:127.0.0.1
 ```
 
 Isso pede a **senha da CA** (etapa de assinatura) e gera, em

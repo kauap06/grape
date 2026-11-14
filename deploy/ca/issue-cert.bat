@@ -1,7 +1,7 @@
-@echo off
+﻿@echo off
 REM Grape Root CA - Windows wrapper. Runs issue-cert.sh through Git Bash.
 REM Usage: issue-cert.bat <name> <san> [san ...]
-REM   e.g.: issue-cert.bat radmin-host ip:26.22.182.86 dns:localhost
+REM   e.g.: issue-cert.bat radmin-host ip:SEU-IP-RADMIN dns:localhost
 setlocal
 set "SCRIPT_DIR=%~dp0"
 

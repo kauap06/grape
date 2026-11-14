@@ -54,6 +54,15 @@ CREATE TABLE IF NOT EXISTS `sessions` (
     INDEX `idx_last_activity` (`last_activity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Preferências de interface por navegador (cookie grape_pref, sem conta de usuário)
+CREATE TABLE IF NOT EXISTS `user_preferences` (
+    `pref_key` CHAR(48) NOT NULL,
+    `data` MEDIUMTEXT NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`pref_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Insert a test room (optional, for development)

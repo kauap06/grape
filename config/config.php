@@ -9,7 +9,9 @@ return [
     'app' => [
         'name' => 'Gaming Calls',
         'version' => '1.0.0',
-        'debug' => true,
+        // Padrao seguro: nao mostra detalhes de erro. Para depurar:
+        //   set APP_DEBUG=1   (antes de iniciar o servidor)
+        'debug' => (bool) getenv('APP_DEBUG'),
         'timezone' => 'America/Sao_Paulo',
         'base_url' => 'http://localhost:8080', // Adjust for your environment
     ],
@@ -20,8 +22,10 @@ return [
         'host' => '127.0.0.1',
         'port' => 3306,
         'database' => 'grape_calls',
-        'username' => 'root',
-        'password' => '321',
+        // Credenciais reais ficam em config/local.php (nao versionado)
+        // ou em DATABASE_USERNAME / DATABASE_PASSWORD.
+        'username' => getenv('DATABASE_USERNAME') ?: 'grape',
+        'password' => getenv('DATABASE_PASSWORD') ?: '',
         'charset' => 'utf8mb4',
         'collation' => 'utf8mb4_unicode_ci',
         'prefix' => '',
@@ -39,18 +43,25 @@ return [
         'lifetime' => 7200, // 2 hours
         'path' => '/',
         'domain' => '',
-        'secure' => false, // Set to true in production with HTTPS
+        // Secure automatico quando a requisicao chega por HTTPS
+        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'),
         'httponly' => true,
         'samesite' => 'Lax',
     ],
 
     // WebSocket server settings
     'websocket' => [
-        'host' => '0.0.0.0',
+        // Loopback: o unico ponto exposto e o Caddy em 443 (/ws -> 8081)
+        'host' => getenv('WEBSOCKET_HOST') ?: '127.0.0.1',
         'port' => 8081,
         'ping_interval' => 25000, // ms
         'ping_timeout' => 10000,  // ms
         'max_message_size' => 10485760, // 10MB (permite fotos de perfil em base64)
+        // Anti-CSWSH: o Origin do handshake deve ser a mesma origem da pagina
+        // (hostname igual ao Host da requisicao) ou constar em allowed_origins.
+        'check_origin' => true,
+        'allowed_origins' => [],
     ],
 
     // WebRTC settings
@@ -122,12 +133,16 @@ return [
             'api' => ['requests' => 60, 'window' => 60], // 60 requests per minute
             'websocket' => ['messages' => 100, 'window' => 60], // 100 messages per minute
         ],
-        'allowed_origins' => ['*'], // Configure for production
+        // Origens extra permitidas no WebSocket (vazio = somente a mesma
+        // origem da pagina; '*' desativa a verificacao - nao use).
+        'allowed_origins' => [],
     ],
 
     // Logging
     'logging' => [
-        'level' => 'debug',
+        // 'debug' grava payloads e dados de sessao nos logs: use apenas para
+        // investigar um problema, definindo LOG_LEVEL=debug no ambiente.
+        'level' => getenv('LOG_LEVEL') ?: 'info',
         'path' => __DIR__ . '/../logs',
         'max_files' => 30,
     ],

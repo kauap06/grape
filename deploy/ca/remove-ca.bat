@@ -27,12 +27,7 @@ del "%LIST%" >nul 2>&1
 if "%FOUND%"=="0" (
     echo   nenhum certificado do Grape encontrado neste usuario.
 ) else (
-    echo.
     echo Pronto. Feche e reabra o navegador.
 )
-
-echo.
-echo Obs.: certificados instalados para o COMPUTADOR inteiro ^(loja
-echo LocalMachine^) nao sao removidos aqui - use certlm.msc se precisar.
 pause
 exit /b 0

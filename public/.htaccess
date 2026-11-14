@@ -1,41 +1,57 @@
-
-# Gaming Calls - Apache Security Configuration
+# Grape - Configuracao de seguranca do Apache (dentro de public/)
+#
+# Este e o unico diretorio que deve ser servido. DocumentRoot ideal:
+#   DocumentRoot "C:/caminho/grape/public"
 
 Options -Indexes
+Options -MultiViews
 
-# Bloquear arquivos ocultos
+# ---------------------------------------------------------------------------
+# 1. Arquivos ocultos e sensiveis
+# ---------------------------------------------------------------------------
 <FilesMatch "^\.">
     Require all denied
 </FilesMatch>
 
-# Bloquear arquivos sensíveis
-<FilesMatch "\.(env|sql|log|md|ini|bak|old|dist)$">
+# Nunca servir: .env, dumps SQL, logs, backups, chaves e certificados
+<FilesMatch "\.(env|sql|log|md|ini|bak|old|orig|save|swp|dist|zip|tar|gz|phar|key|pem|crt|p12|pfx)$">
     Require all denied
 </FilesMatch>
 
-# Proteger arquivos do Composer
-<FilesMatch "^(composer\.(json|lock)|package(-lock)?\.json)$">
+<FilesMatch "^(composer\.(json|lock|phar)|package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml)$">
     Require all denied
 </FilesMatch>
 
-# Bloquear arquivos de configuração
 <FilesMatch "^(config|\.env)">
     Require all denied
 </FilesMatch>
 
-# Segurança HTTP
+# ---------------------------------------------------------------------------
+# 2. Cabecalhos de seguranca
+# ---------------------------------------------------------------------------
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+    Header always unset X-Powered-By
+    Header unset Server
+
+    # HSTS: habilite apenas quando o site for servido por HTTPS.
+    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
-# Compressão
+# ---------------------------------------------------------------------------
+# 3. Compressao
+# ---------------------------------------------------------------------------
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json
 </IfModule>
 
-# Cache de arquivos estáticos
+# ---------------------------------------------------------------------------
+# 4. Cache de arquivos estaticos
+# ---------------------------------------------------------------------------
 <IfModule mod_expires.c>
     ExpiresActive On
     ExpiresByType text/css "access plus 1 year"
@@ -46,7 +62,9 @@ Options -Indexes
     ExpiresByType image/webp "access plus 1 year"
 </IfModule>
 
-# Rotas e APIs
+# ---------------------------------------------------------------------------
+# 5. Rotas e APIs
+# ---------------------------------------------------------------------------
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
@@ -55,6 +73,7 @@ Options -Indexes
     RewriteRule ^api/rooms/join/?$ api/rooms/join.php [END]
     RewriteRule ^api/rooms/leave/?$ api/rooms/leave.php [END]
     RewriteRule ^api/rooms/status/?$ api/rooms/status.php [END]
+    RewriteRule ^api/preferences/?$ api/preferences.php [END]
 
     # Front controller opcional
     # RewriteCond %{REQUEST_FILENAME} !-f

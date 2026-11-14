@@ -1,0 +1,34 @@
+<?php
+/**
+ * Grape - Configuracao local (TEMPLATE)
+ *
+ * COPIE este arquivo para config/local.php e preencha os valores reais:
+ *
+ *     copy config\local.php.example config\local.php      (Windows)
+ *     cp    config/local.php.example config/local.php      (Linux/macOS)
+ *
+ * config/local.php NAO e versionado (esta no .gitignore) e NAO deve ser
+ * distribuido. Ele existe justamente para guardar credenciais fora do codigo.
+ *
+ * Alternativa sem arquivo: defina as variaveis de ambiente
+ * DATABASE_USERNAME e DATABASE_PASSWORD antes de iniciar o servidor.
+ */
+
+return [
+    'database' => [
+        // Usuario dedicado, com permissao apenas no banco grape_calls.
+        // NAO use root.
+        'username' => 'grape',
+        // Troque por uma senha longa e aleatoria (ex.: 32+ caracteres).
+        // Para gerar:
+        //   php -r "echo bin2hex(random_bytes(16)), PHP_EOL;"
+        'password' => 'TROQUE-ESTA-SENHA',
+    ],
+
+    // Credenciais de ADMIN, usadas apenas por database/bootstrap.php para
+    // criar o banco/usuario. Nao sao usadas pelas paginas.
+    'database_admin' => [
+        'username' => 'root',
+        'password' => 'SENHA-DO-ROOT',
+    ],
+];

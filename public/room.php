@@ -9,10 +9,13 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use GamingCalls\Config\Config;
 use GamingCalls\Session\SessionManager;
 use GamingCalls\Support\Url;
+use GamingCalls\Support\Security;
+use GamingCalls\Support\Preferences;
 use GamingCalls\Models\Room;
 
 Config::load(__DIR__ . '/../config/config.php');
 SessionManager::start();
+Security::sendHeaders();
 
 // Get invite code from URL
 $inviteCode = isset($_GET['code']) ? strtoupper(trim($_GET['code'])) : '';
@@ -35,10 +38,18 @@ SessionManager::setCurrentRoomId($room->id);
 $displayName = SessionManager::getDisplayName() ?? '';
 $avatar = SessionManager::getAvatar() ?? '';
 $csrfToken = SessionManager::getCsrfToken();
+$cspNonce = Security::nonce();
 $baseUrl = Url::basePath();
 $wsUrl = Url::websocket((int) Config::get('websocket.port', 8081));
 // Link de convite: abre a página inicial com o código da sala já preenchido
 $joinUrl = Url::inviteBase() . '/?code=' . $room->inviteCode;
+
+// Preferencias salvas no banco para este navegador (fallback do localStorage)
+Preferences::key();
+$prefsJson = json_encode(
+    (object) Preferences::load(),
+    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+) ?: '{}';
 
 ?>
 <!DOCTYPE html>
@@ -358,11 +369,12 @@ $joinUrl = Url::inviteBase() . '/?code=' . $room->inviteCode;
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script>
+    <script nonce="<?= $cspNonce ?>">
         window.APP_CONFIG = {
             baseUrl: '<?= $baseUrl ?>',
             wsUrl: '<?= $wsUrl ?>',
             csrfToken: '<?= $csrfToken ?>',
+            preferences: <?= $prefsJson ?>,
             debug: <?= Config::get('app.debug') ? 'true' : 'false' ?>,
             room: {
                 id: <?= $room->id ?>,

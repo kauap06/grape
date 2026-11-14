@@ -106,9 +106,11 @@ Find the host's Radmin VPN IPv4 address with `ipconfig` (look for the Radmin VPN
 
 Runtime settings live in `config/config.php`, overridable per machine in `config/local.php` (not versioned). Defaults:
 
-- database `grape_calls` on `127.0.0.1:3306`, user `root`, password `321`;
-- PHP HTTP server `0.0.0.0:8080`, WebSocket `0.0.0.0:8081`;
+- database `grape_calls` on `127.0.0.1:3306`, user `grape` — no password is shipped; set it in `config/local.php` (copy `config/local.php.example`);
+- PHP HTTP server `127.0.0.1:8080`, WebSocket `127.0.0.1:8081` — reachable only through the Caddy proxy on 443;
 - room capacity 10, chat message limit 500 characters, WebSocket ping 25 s.
+
+Credentials never belong in `config/config.php`, which is versioned. Use `config/local.php` or the `DATABASE_USERNAME` / `DATABASE_PASSWORD` environment variables.
 
 WebRTC STUN/TURN servers (`config/config.php`):
 
@@ -146,8 +148,8 @@ type logs\websocket-error.log
 type logs\caddy.log
 type logs\mysql.log
 
-REM Database console (default credentials)
-portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u root -p321 grape_calls
+REM Database console (prompts for the password of the app user)
+portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u grape -p grape_calls
 
 REM Re-apply schema migrations (start-host does this automatically)
 portable\php\php.exe database\migrate.php
@@ -164,17 +166,24 @@ deploy\ca\make-guest-installer.bat   REM regenerate dist\install-ca.bat
 
 ## Database
 
-The bundled MariaDB starts with the `grape_calls` database and schema already created. For a fresh database or another server:
+The database and schema are created by `bin\start-host.bat` on first run, using the credentials from `config/local.php`. For a fresh database or another server:
 
 ```sql
 CREATE DATABASE grape_calls CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'grape'@'127.0.0.1' IDENTIFIED BY 'uma-senha-longa-e-aleatoria';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER
+    ON grape_calls.* TO 'grape'@'127.0.0.1';
+FLUSH PRIVILEGES;
 ```
 
 ```bat
-portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u root -p321 grape_calls < database\schema.sql
+REM prompts for the password set above
+portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u grape -p grape_calls < database\schema.sql
 ```
 
 `database/schema.sql` is the canonical schema; `database/migrate.php` applies small idempotent upgrades to existing databases (currently: `room_participants.avatar_data` widened to `MEDIUMTEXT`). Back up by stopping MariaDB and copying `portable\mariadb\data`.
+
+> The `portable\mariadb\data` directory holds the database files, including the password hashes from `mysql.global_priv`. It is machine-specific and must never be redistributed — `bin\start-host.bat` initializes a fresh one when it is missing.
 
 ---
 

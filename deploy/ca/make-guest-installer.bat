@@ -43,8 +43,5 @@ if not exist "%OUT%" (
     exit /b 1
 )
 
-echo Instalador para convidados gerado:
-echo   %OUT%
-echo.
-echo Envie apenas esse arquivo para o convidado: ele so precisa dar duplo clique.
+echo Instalador para convidados gerado: %OUT%   ^(envie este arquivo ao convidado^)
 exit /b 0

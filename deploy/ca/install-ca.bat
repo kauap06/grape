@@ -148,13 +148,8 @@ if "%SILENT%"=="1" (
     echo Certificado HTTPS confiado neste PC ^(CA do Caddy^).
     exit /b 0
 )
-echo.
-echo Pronto. Este PC agora confia no certificado do Grape.
-echo Feche e reabra o navegador se ele estiver aberto.
-echo Teste em: https://localhost  ^(deve abrir sem aviso de certificado^)
-echo.
-echo Para remover depois:
-echo   deploy\ca\remove-ca.bat
+echo Pronto. Este PC agora confia no certificado do Grape. Feche e reabra o navegador.
+echo Teste em: https://localhost   ^(remover depois: deploy\ca\remove-ca.bat^)
 pause
 exit /b 0
 

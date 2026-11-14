@@ -94,8 +94,8 @@ type logs\websocket-error.log
 type logs\caddy.log
 type logs\mysql.log
 
-REM Banco (credenciais do config\local.php: root / 321)
-portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u root -p321 grape_calls
+REM Banco (usuario/senha definidos em config\local.php)
+portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u grape -p grape_calls
 
 REM Reaplicar migrações (o start-host já faz)
 portable\php\php.exe database\migrate.php

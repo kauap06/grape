@@ -1,39 +1,31 @@
 {
-
-    debug
-
-
-
-    servers {
-
-        protocols h1
-
-    }
-
+	servers {
+		protocols h1
+	}
 }
 
-
-
+# Unico ponto exposto na rede (443). PHP e WebSocket escutam apenas em
+# 127.0.0.1 e sao acessados por este proxy.
 https://{$RADMIN_IP:127.0.0.1}, https://localhost {
+	tls internal
+	log
 
-    tls internal
+	# Cabecalhos de seguranca + remove a versao do servidor
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
 
-    log
+	handle /ws* {
+		reverse_proxy 127.0.0.1:8081
+	}
 
-
-
-    handle /ws* {
-
-        reverse_proxy 127.0.0.1:8081
-
-    }
-
-
-
-    handle {
-
-        reverse_proxy 127.0.0.1:8080
-
-    }
-
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
 }

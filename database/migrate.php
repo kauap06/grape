@@ -40,3 +40,15 @@ if ($type !== '') {
 } else {
     echo "Migracoes: tabela room_participants ainda nao existe (rode database/schema.sql)" . PHP_EOL;
 }
+
+// Preferencias de interface passaram a ser persistidas no banco.
+$db->exec(
+    "CREATE TABLE IF NOT EXISTS `user_preferences` (
+        `pref_key` CHAR(48) NOT NULL,
+        `data` MEDIUMTEXT NOT NULL,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (`pref_key`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+);
+echo "Migracoes: tabela user_preferences pronta" . PHP_EOL;
