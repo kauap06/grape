@@ -1181,21 +1181,6 @@ body {
 .profile-fields .form-label { display: block; margin-bottom: 6px; font-weight: 600; }
 .profile-fields .field-hint { text-align: right; }
 
-.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
-.swatch {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
-  outline: 2px solid transparent;
-  outline-offset: 3px;
-  transition: transform .15s, outline-color .15s;
-}
-.swatch:hover { transform: scale(1.08); outline-color: rgba(255,255,255,.35); }
-.swatch.selected { outline-color: #fff; box-shadow: 0 0 0 5px rgba(200, 150, 255, .35); }
-.swatch:focus-visible { outline-color: #fff; }
 
 .photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-modal .btn-ghost {

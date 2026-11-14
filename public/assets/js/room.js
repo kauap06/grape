@@ -156,11 +156,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // O perfil (nome/avatar) fica salvo no navegador; a sessão PHP não o conhece.
   const profile = Storage.get('profile', {});
 
-  // Modo compacto escolhido na home: aplica o visual minimalista também aqui.
-  // (a classe vive no CSS compartilhado; aqui só a ligamos conforme o salvo)
+  // Modo compacto escolhido na home (ou aqui): aplica o visual minimalista
+  // também nesta tela, que compartilha a mesma chave de preferência.
   const uiPrefs = Storage.get('uiPreferences', {});
-  if (uiPrefs.compactMode) document.body.classList.add('is-compact');
-  if (uiPrefs.animationsEnabled === false || uiPrefs.compactMode) document.body.classList.add('no-animations');
+  setCompactMode(!!uiPrefs.compactMode, true);
   state.displayName = ((profile.displayName || state.displayName || '').trim()) || 'Jogador';
   state.avatar = serializeAvatar(profile.avatar) || state.avatar;
   state.view.split = !!Storage.get('roomView', {}).split;
@@ -361,14 +360,30 @@ function cacheElements() {
   elements.profileName = $('profile-name');
   elements.profileNameCount = $('profile-name-count');
   elements.profileAvatarPreview = $('profile-avatar-preview');
-  elements.profileSwatches = $('profile-swatches');
   elements.profilePhotoBtn = $('profile-photo-btn');
   elements.profilePhotoRemove = $('profile-photo-remove');
   elements.profilePhotoInput = $('profile-photo-input');
+  elements.compactMode = $('room-compact-mode');
 
   if (elements.roomName) elements.roomName.textContent = state.roomName;
 }
 
+/**
+ * Liga/desliga o modo compacto. A preferência é compartilhada com a home
+ * (mesma chave uiPreferences), então a escolha vale nas duas telas.
+ */
+function setCompactMode(enabled, silent = false) {
+  document.body.classList.toggle('is-compact', enabled);
+  document.body.classList.toggle('no-animations', enabled);
+  if (elements.compactMode) elements.compactMode.checked = enabled;
+  if (silent) return;
+  const ui = Storage.get('uiPreferences', {});
+  Storage.set('uiPreferences', {
+    ...ui,
+    compactMode: enabled,
+    animationsEnabled: enabled ? false : (ui.compactSnapshot?.animationsEnabled ?? true)
+  });
+}
 function setupEventListeners() {
   // Sidebar
   elements.leaveRoomBtn?.addEventListener('click', leaveRoom);
@@ -440,6 +455,9 @@ function setupEventListeners() {
   elements.profilePhotoBtn?.addEventListener('click', () => elements.profilePhotoInput?.click());
   elements.profilePhotoInput?.addEventListener('change', onProfilePhotoSelected);
   elements.profilePhotoRemove?.addEventListener('click', removeProfilePhoto);
+  elements.compactMode?.addEventListener('change', () => {
+    setCompactMode(elements.compactMode.checked);
+  });
   elements.maxBitrate?.addEventListener('input', (e) => {
     if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${e.target.value} kbps`;
   });
@@ -574,7 +592,8 @@ function loadSettings() {
 }
 
 // ---- Perfil dentro da sala ------------------------------------------------
-const PROFILE_COLORS = ['#52525b', '#4d7c6f', '#a07a3c', '#a14b4b', '#5b6b9a', '#4a7f94', '#8a5a7a', '#6b7280'];
+// Avatar padrão (sem foto): cor sólida única, sem paleta para escolher
+const DEFAULT_AVATAR = { type: 'gradient', color: '#52525b' };
 const profileDraft = { name: '', avatar: null }; // avatar: objeto {type:'gradient'|'custom', ...}
 
 function openSettings(tab = 'profile') {
@@ -598,7 +617,7 @@ function switchSettingsTab(name) {
 
 function resetProfileDraft() {
   profileDraft.name = state.displayName;
-  profileDraft.avatar = parseAvatar(state.avatar) || { type: 'gradient', color: PROFILE_COLORS[0] };
+  profileDraft.avatar = parseAvatar(state.avatar) || { ...DEFAULT_AVATAR };
   if (elements.profileName) elements.profileName.value = profileDraft.name;
   renderProfileDraft();
 }
@@ -609,23 +628,6 @@ function renderProfileDraft() {
 
   if (elements.profileAvatarPreview) setAvatar(elements.profileAvatarPreview, profileDraft.avatar, name || '?');
 
-  if (elements.profileSwatches) {
-    elements.profileSwatches.innerHTML = '';
-    const current = profileDraft.avatar?.type === 'gradient' ? profileDraft.avatar.color : null;
-    PROFILE_COLORS.forEach(color => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'swatch' + (color === current ? ' selected' : '');
-      btn.style.background = color;
-      btn.setAttribute('aria-label', `Cor ${color}`);
-      btn.setAttribute('aria-pressed', String(color === current));
-      btn.addEventListener('click', () => {
-        profileDraft.avatar = { type: 'gradient', color };
-        renderProfileDraft();
-      });
-      elements.profileSwatches.appendChild(btn);
-    });
-  }
 
   if (elements.profilePhotoRemove) elements.profilePhotoRemove.hidden = profileDraft.avatar?.type !== 'custom';
 }
@@ -656,7 +658,7 @@ function onProfilePhotoSelected(e) {
 }
 
 function removeProfilePhoto() {
-  profileDraft.avatar = { type: 'gradient', color: PROFILE_COLORS[0] };
+  profileDraft.avatar = { ...DEFAULT_AVATAR };
   renderProfileDraft();
 }
 
@@ -677,12 +679,10 @@ function applyProfileChanges() {
   state.avatar = avatar;
 
   const saved = Storage.get('profile', {});
-  const colorIndex = PROFILE_COLORS.indexOf(profileDraft.avatar?.color);
   Storage.set('profile', {
     ...saved,
     displayName: name,
-    avatar: profileDraft.avatar,
-    selectedAvatarIndex: colorIndex >= 0 ? colorIndex : (saved.selectedAvatarIndex || 0)
+    avatar: profileDraft.avatar
   });
 
   const me = state.participants.get(state.sessionId);

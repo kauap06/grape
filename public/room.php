@@ -284,18 +284,28 @@ $prefsJson = json_encode(
                         </div>
 
                         <div class="settings-group">
-                            <span class="form-label">Cor do avatar</span>
-                            <div class="swatches" id="profile-swatches" role="group" aria-label="Cor do avatar"></div>
+                            <span class="form-label">Foto</span>
+                            <div class="photo-actions">
+                                <input type="file" id="profile-photo-input" accept="image/*" hidden>
+                                <button type="button" class="avatar-upload-btn" id="profile-photo-btn">
+                                    <span class="avatar-upload-icon" aria-hidden="true"></span>
+                                    Enviar foto
+                                </button>
+                                <button type="button" class="btn btn-ghost btn-sm" id="profile-photo-remove" hidden>Remover foto</button>
+                            </div>
+                            <p class="field-hint">Imagens de até 2 MB. Todos na sala veem a mudança assim que você salvar.</p>
                         </div>
 
                         <div class="settings-group">
-                            <span class="form-label">Foto</span>
-                            <div class="photo-actions">
-                                <button type="button" class="btn btn-secondary btn-sm" id="profile-photo-btn">Enviar foto…</button>
-                                <button type="button" class="btn btn-ghost btn-sm" id="profile-photo-remove" hidden>Remover foto</button>
-                                <input type="file" id="profile-photo-input" accept="image/*" hidden>
-                            </div>
-                            <p class="field-hint">Imagens de até 2 MB. Todos na sala veem a mudança assim que você salvar.</p>
+                            <span class="form-label">Interface</span>
+                            <label class="preference-switch" for="room-compact-mode">
+                                <input type="checkbox" id="room-compact-mode" role="switch">
+                                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                                <span class="switch-label">
+                                    Modo compacto
+                                    <small>Visual minimalista, sem animações</small>
+                                </span>
+                            </label>
                         </div>
                     </section>
 
