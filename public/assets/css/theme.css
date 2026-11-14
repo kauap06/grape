@@ -98,3 +98,125 @@
 .btn-arrow { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E"); }
 .btn-create { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
 .btn-create:disabled::before { display: none; }
+
+/* ==========================================================================
+   Modo compacto: visual minimalista.
+   Some com tudo que é ornamento (blobs, uvas, gradientes, vidro, sombras) e
+   deixa só superfícies chapadas, tipografia menor e espaçamento apertado.
+   ========================================================================== */
+body.is-compact { --min-bg: #0d0c11; --min-surface: #14121a; --min-line: #272430; }
+
+body.is-compact.theme-grape { background: var(--min-bg); }
+body.is-compact .deco { display: none; }
+
+body.is-compact .page-home {
+  --pad: 16px; --gap: 12px; --field-h: 40px; --maxw: 900px;
+}
+body.is-compact .main-content { padding-block: 10px 16px; }
+
+/* Marca discreta */
+body.is-compact .logo-mark { width: 30px; filter: none; }
+body.is-compact .logo-text { font-size: 22px; letter-spacing: 0; }
+body.is-compact .logo { gap: 10px; }
+body.is-compact .header-content { padding-top: 14px; }
+body.is-compact .header-nav .btn { border-radius: 8px; }
+
+/* Superfícies: chapadas, borda de 1px, canto pequeno */
+body.is-compact .profile-card,
+body.is-compact .room-card,
+body.is-compact .tile,
+body.is-compact .panel {
+  background: var(--min-surface);
+  border: 1px solid var(--min-line);
+  border-radius: 10px;
+  box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+
+/* Títulos viram rótulos */
+body.is-compact .section-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+}
+body.is-compact .section-title::before { display: none; }
+
+/* Controles chapados */
+body.is-compact .btn { min-height: 38px; border-radius: 8px; box-shadow: none; }
+body.is-compact .btn-primary {
+  background: var(--color-accent-primary);
+  box-shadow: none;
+}
+body.is-compact .btn-primary:hover:not(:disabled) { background: var(--color-accent-primary-hover); }
+body.is-compact .home-grid .form-input,
+body.is-compact .form-input,
+body.is-compact .form-select {
+  background: #111018;
+  border-radius: 8px;
+  border-color: var(--min-line);
+}
+body.is-compact .form-input:focus,
+body.is-compact .form-select:focus { box-shadow: none; }
+body.is-compact .has-icon::before { display: none; }
+body.is-compact .has-icon .form-input { padding-left: var(--space-md); }
+
+/* Avatar sem anel nem brilho */
+body.is-compact .avatar-preview {
+  width: 56px;
+  border: 1px solid var(--min-line);
+  box-shadow: none;
+  font-size: 22px;
+}
+body.is-compact .avatar-upload-btn {
+  border-style: solid;
+  border-color: var(--min-line);
+  border-radius: 8px;
+  background: transparent;
+}
+
+/* Preferências e interruptor discretos */
+body.is-compact .preferences-grid,
+body.is-compact .preference-switch {
+  background: transparent;
+  border-color: var(--min-line);
+  border-radius: 8px;
+}
+body.is-compact .preference-switch input:checked + .switch-track { box-shadow: none; }
+body.is-compact .switch-track { width: 34px; height: 19px; }
+body.is-compact .switch-thumb { width: 11px; height: 11px; }
+body.is-compact .preference-switch input:checked + .switch-track .switch-thumb { transform: translateX(15px); }
+
+/* Modal, toast e divisor sóbrios */
+body.is-compact .modal { border-radius: 10px; box-shadow: none; }
+body.is-compact .toast { border-radius: 8px; box-shadow: none; }
+body.is-compact .modal-overlay { background: rgba(6, 5, 10, 0.82); }
+body.is-compact .divider::before,
+body.is-compact .divider::after { background: var(--min-line); }
+
+
+/* Sala: painel lateral e dock na mesma linguagem */
+body.is-compact .side,
+body.is-compact .dock {
+  background: var(--min-surface);
+  border: 1px solid var(--min-line);
+  border-radius: 10px;
+  box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.is-compact .dock-btn,
+body.is-compact .dock-ghost,
+body.is-compact .side-tab { border-radius: 8px; box-shadow: none; }
+body.is-compact .dock-leave { background: #c4262f; border-color: transparent; box-shadow: none; }
+body.is-compact .dock-leave:hover { background: #d4313a; }
+body.is-compact .side-tab[aria-selected="true"] { background: var(--min-line); }
+
+body.no-animations *,
+body.no-animations *::before,
+body.no-animations *::after {
+  transition: none !important;
+  animation: none !important;
+
+}

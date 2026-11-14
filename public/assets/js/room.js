@@ -155,6 +155,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // O perfil (nome/avatar) fica salvo no navegador; a sessão PHP não o conhece.
   const profile = Storage.get('profile', {});
+
+  // Modo compacto escolhido na home: aplica o visual minimalista também aqui.
+  // (a classe vive no CSS compartilhado; aqui só a ligamos conforme o salvo)
+  const uiPrefs = Storage.get('uiPreferences', {});
+  if (uiPrefs.compactMode) document.body.classList.add('is-compact');
+  if (uiPrefs.animationsEnabled === false || uiPrefs.compactMode) document.body.classList.add('no-animations');
   state.displayName = ((profile.displayName || state.displayName || '').trim()) || 'Jogador';
   state.avatar = serializeAvatar(profile.avatar) || state.avatar;
   state.view.split = !!Storage.get('roomView', {}).split;

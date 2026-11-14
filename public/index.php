@@ -127,7 +127,7 @@ $prefsJson = json_encode(
                                 <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
                                 <span class="switch-label">
                                     Modo compacto
-                                    <small>Menos espaçamento, sem timestamps e sem animações</small>
+                                    <small>Um design mais minimalista e mais leve...</small>
                                 </span>
                             </label>
                         </div>
