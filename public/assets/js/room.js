@@ -308,6 +308,7 @@ function cacheElements() {
   elements.participantCount = $('participant-count-value');
   elements.participantsList = $('participants-list');
   elements.inviteBtn = $('invite-btn');
+  elements.roomCode = $('room-code');
 
   elements.chatMessages = $('chat-messages');
   elements.chatForm = $('chat-form');
@@ -398,6 +399,7 @@ function setupEventListeners() {
   elements.sideOverlay?.addEventListener('click', () => toggleSide(false));
   elements.sideTabs.forEach(tab => tab.addEventListener('click', () => showSidePanel(tab.dataset.panel)));
   elements.inviteBtn?.addEventListener('click', copyInviteLink);
+  elements.roomCode?.addEventListener('click', copyRoomCode);
   elements.chatForm?.addEventListener('submit', sendChatMessage);
 
   // Lista de participantes (delegação)
@@ -984,11 +986,14 @@ function handleParticipantJoined(payload) {
   }
 
   notifyRoom(`${escapeHtml(payload.display_name)} entrou na sala`);
+  playNotificationSound('join.mp3');
 }
 
 function handleParticipantLeft(payload) {
   const { session_id: sessionId } = payload;
   const participant = state.participants.get(sessionId);
+
+  playNotificationSound('exit-call.mp3');
 
   state.participants.delete(sessionId);
   state.order = state.order.filter(id => id !== sessionId);
@@ -1031,6 +1036,8 @@ function handleMediaStateChanged(payload) {
       playNotificationSound('screen.mp3');
     } else if (before.screen && !after.screen) {
       notifyRoom(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+      // Só quem está olhando a aba dessa pessoa precisa do aviso sonoro
+      if (state.view.sessionId === sessionId) playNotificationSound('live-close.mp3');
     }
   }
 
@@ -2651,15 +2658,20 @@ function notifyRoom(message, duration, options) {
 
 // Sons das notificações (carregados sob demanda, um Audio por arquivo)
 const notificationSounds = {};
-function playNotificationSound(file = 'notification.mp3') {
+// Volume dos avisos: reduzido em degraus (0.8 e depois mais 15%)
+const SOUND_VOLUME = 0.68;
+function playNotificationSound(file = 'message.mp3') {
   if (notificationsMuted) return;
   try {
     let audio = notificationSounds[file];
     if (!audio) {
       audio = new Audio((window.APP_CONFIG?.baseUrl || '') + '/assets/sound/' + file);
       audio.preload = 'auto';
+      audio.volume = SOUND_VOLUME;
       notificationSounds[file] = audio;
     }
+    // Reaplica a cada toque, caso o volume tenha mudado
+    audio.volume = SOUND_VOLUME;
     audio.currentTime = 0;
     // O navegador pode bloquear o autoplay antes da primeira interação; ignora o erro
     audio.play().catch(() => {});
@@ -2979,6 +2991,23 @@ function toggleFullscreen() {
 // ============================================
 // Invite Link
 // ============================================
+// Copia só o código da sala, com o mesmo fallback usado no link
+async function copyRoomCode() {
+  const codigo = state.inviteCode || elements.roomCode?.textContent?.trim() || '';
+  if (!codigo) return;
+  try {
+    await navigator.clipboard.writeText(codigo);
+  } catch (e) {
+    const input = document.createElement('input');
+    input.value = codigo;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+  }
+  Toast.success('Código da sala copiado!');
+}
+
 async function copyInviteLink() {
   const url = state.inviteUrl;
   try {

@@ -215,3 +215,62 @@
   .deco-grapes { width: 100px; opacity: .85; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+
+/* ==========================================================================
+   Modo compacto: resquícios do tema padrão na home.
+   Fica no fim para vencer por ordem as regras do visual normal.
+   ========================================================================== */
+body.is-compact.page-home .section-title,
+body.is-compact #profile-title,
+body.is-compact #room-title { color: var(--color-text-muted); }
+
+/* Marcadores redondos: sem anel colorido, sem preenchimento em gradiente */
+body.is-compact.page-home .preference-item input[type="checkbox"] {
+  border-color: var(--min-line);
+  background: transparent;
+  box-shadow: none;
+}
+body.is-compact.page-home .preference-item input[type="checkbox"]:checked {
+  background: var(--min-line);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+body.is-compact.page-home .preference-item input[type="checkbox"]:checked::after {
+  background: var(--text);
+}
+
+/* Interruptor: neutro, sem brilho */
+body.is-compact.page-home .switch-track {
+  background: var(--min-line);
+  border-color: var(--min-line);
+  border-radius: 6px;
+}
+body.is-compact.page-home .switch-thumb { background: var(--text-2); border-radius: 4px; }
+body.is-compact.page-home .preference-switch input:checked + .switch-track {
+  background: var(--line-strong);
+  border-color: var(--line-strong);
+}
+body.is-compact.page-home .preference-switch input:checked + .switch-track .switch-thumb {
+  background: var(--text);
+}
+body.is-compact.page-home .switch-label small { color: var(--text-3); }
+
+/* Botões principais e divisor sem cor de marca */
+body.is-compact.page-home .btn-primary {
+  background: var(--min-line);
+  color: var(--text);
+  box-shadow: none;
+}
+body.is-compact.page-home .btn-primary:hover:not(:disabled) { background: var(--line-strong); }
+body.is-compact.page-home .divider::before,
+body.is-compact.page-home .divider::after { background: var(--min-line); }
+body.is-compact.page-home .divider span { color: var(--text-3); }
+
+/* Avatar de prévia sem anel */
+body.is-compact.page-home .avatar-preview {
+  border-color: var(--min-line);
+  background: var(--min-line);
+  box-shadow: none;
+}
+body.is-compact.page-home .nav-link { border-radius: 8px; }

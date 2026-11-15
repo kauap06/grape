@@ -88,6 +88,37 @@ body {
   border-color: var(--line);
 }
 .call-info { min-width: 0; flex: 1; }
+/* Nome e código na mesma linha; o código é um botão de copiar */
+.call-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.room-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.room-code:hover {
+  color: var(--text);
+  background: var(--panel-3);
+  border-color: var(--line-strong);
+}
+.room-code svg { width: 11px; height: 11px; }
+.room-code:active { transform: scale(.97); }
+body.is-compact .room-code { border-radius: 6px; }
 .call-name {
   font-size: 15px;
   font-weight: var(--font-weight-semibold);
@@ -1441,3 +1472,111 @@ body.is-compact .host-badge { border-radius: 4px; letter-spacing: 0; }
 .mute-all-btn:hover { background: var(--panel-3); color: var(--text); }
 .mute-all-btn svg { width: 15px; height: 15px; }
 body.is-compact .mute-all-btn { border-radius: 8px; }
+
+
+/* ==========================================================================
+   Modo compacto: últimos resquícios do tema padrão.
+   Fica no fim do arquivo e usa os IDs onde o tema padrão vence por
+   especificidade, para nada do visual roxo/arredondado sobrar.
+   ========================================================================== */
+body.is-compact .icon-btn,
+body.is-compact #leave-room-btn,
+body.is-compact #side-toggle,
+body.is-compact #side-close,
+body.is-compact #fullscreen-btn,
+body.is-compact #popout-btn,
+body.is-compact .dock-btn,
+body.is-compact .dock-ghost,
+body.is-compact .invite-btn,
+body.is-compact .empty-action,
+body.is-compact .pane-tag,
+body.is-compact .chat-input,
+body.is-compact .chat-send,
+body.is-compact .mute-all-btn,
+body.is-compact .room-code {
+  border-radius: 8px;
+}
+body.is-compact .dock-main { border-radius: 10px; }
+body.is-compact .dock-btn,
+body.is-compact .empty-action { background: transparent; border-color: transparent; }
+body.is-compact .dock-btn:hover,
+body.is-compact .empty-action:hover { background: var(--min-line); }
+body.is-compact .pane-tag { background: rgba(13, 12, 17, 0.8); border-color: var(--min-line); }
+body.is-compact .chat-input { background: #111018; border-color: var(--min-line); }
+body.is-compact .chat-input:focus { box-shadow: none; border-color: var(--line-strong); }
+body.is-compact .chat-send { background: var(--min-line); color: var(--text); }
+
+/* Nada de gradiente ou brilho nos avatares */
+body.is-compact .user-avatar,
+body.is-compact .person .user-avatar,
+body.is-compact .viewing .user-avatar,
+body.is-compact .pane-empty .user-avatar,
+body.is-compact .profile-avatar,
+body.is-compact .chat-message-avatar {
+  background: var(--min-line);
+  background-image: none;
+  color: var(--text);
+  box-shadow: none;
+}
+body.is-compact .profile-avatar { border-radius: 50%; }
+
+/* Botões e indicadores sem realce */
+body.is-compact #fullscreen-btn,
+body.is-compact .status-dot,
+body.is-compact .live-pip,
+body.is-compact .dock-dot { box-shadow: none; }
+body.is-compact .dock-leave,
+body.is-compact .chat-send { background-image: none; }
+body.is-compact .dock-leave { background: #c4262f; }
+body.is-compact .dock-leave:hover { background: #d4313a; }
+
+/* Campos e interruptor neutros */
+body.is-compact .settings-input,
+body.is-compact .btn-secondary,
+body.is-compact .btn-ghost {
+  background: #111018;
+  border-color: var(--min-line);
+  box-shadow: none;
+}
+body.is-compact .switch-track { background: var(--min-line); border-color: var(--min-line); border-radius: 6px; }
+body.is-compact .switch-thumb { background: var(--text-2); border-radius: 4px; }
+body.is-compact .preference-switch input:checked + .switch-track {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+}
+
+/* Avisos */
+body.is-compact .toast,
+body.is-compact .toast.success,
+body.is-compact .toast.info,
+body.is-compact .toast.warning,
+body.is-compact .toast.error {
+  background: var(--min-surface);
+  border-color: var(--min-line);
+  box-shadow: none;
+  border-radius: 8px;
+}
+body.is-compact .toast-close { color: var(--text-2); }
+/* Últimos pontos com cor de destaque do tema padrão */
+body.is-compact #fullscreen-btn,
+body.is-compact .invite-btn {
+  background: var(--min-surface);
+  border-color: var(--min-line);
+  color: var(--text-2);
+}
+body.is-compact #fullscreen-btn:hover,
+body.is-compact .invite-btn:hover { background: var(--min-line); color: var(--text); }
+body.is-compact #settings-close,
+body.is-compact .modal-close { color: var(--text-2); }
+body.is-compact #profile-avatar-preview { box-shadow: none; background: var(--min-line); background-image: none; color: var(--text); border-color: var(--min-line); }
+body.is-compact .switch-label small,
+body.is-compact .field-hint,
+body.is-compact .settings-hint { color: var(--text-3); }
+body.is-compact #settings-save,
+body.is-compact .btn-primary {
+  background: var(--min-line);
+  color: var(--text);
+  border-color: var(--min-line);
+}
+body.is-compact #settings-save:hover,
+body.is-compact .btn-primary:hover:not(:disabled) { background: var(--line-strong); }
