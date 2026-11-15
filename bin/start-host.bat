@@ -64,6 +64,27 @@ if not exist "%PROJECT_DIR%\vendor\autoload.php" (
 
 if not exist "%PROJECT_DIR%\logs" mkdir "%PROJECT_DIR%\logs"
 
+REM ---- Limpeza de portas (ANTES de subir qualquer servico) ----
+REM Encerra processos do Grape (php/caddy/mysqld do portable, websocket, Caddyfile).
+REM Programas de terceiros nas portas abortam o inicio, com nome e PID.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$alvo = Get-CimInstance Win32_Process -Filter \"Name='php.exe' or Name='caddy.exe' or Name='mysqld.exe'\" | Where-Object { $_.ExecutablePath -like ($env:PROJECT_DIR + '\portable\*') -or $_.CommandLine -like '*websocket-server.php*' -or $_.CommandLine -like '*deploy*Caddyfile*' }; foreach ($proc in $alvo) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop; Write-Host ('  [limpo] processo ' + $proc.ProcessId + ' encerrado') } catch {} }"
+
+REM Aguarda as portas serem liberadas pelo sistema
+ping -n 3 -w 1000 127.0.0.1 >nul 2>&1
+
+for %%P in (8080 8081 443) do (
+    netstat -ano -p tcp | findstr /r /c:":%%P .*LISTENING" >nul 2>&1
+    if not errorlevel 1 (
+        for /f "tokens=5" %%A in ('netstat -ano -p tcp ^| findstr /r /c:":%%P .*LISTENING"') do (
+            set "NOME_PROC=desconhecido"
+            for /f "skip=2 tokens=1" %%N in ('tasklist /fi "PID eq %%A"') do set "NOME_PROC=%%N"
+            echo [ERRO] Porta %%P ocupada pelo processo !NOME_PROC! com PID %%A. Encerre-o e rode o start-host de novo.
+        )
+        pause
+        exit /b 1
+    )
+)
+
 REM ---- MariaDB (loopback, local_infile off) ----
 set MYSQL_ALREADY_RUNNING=0
 netstat -ano -p tcp | findstr /C:":3306 " | findstr /C:"LISTENING" >nul
@@ -117,20 +138,6 @@ if exist "%PROJECT_DIR%\database\bootstrap.php" (
         exit /b 1
     )
     "%PHP_EXE%" "%PROJECT_DIR%\database\migrate.php" >nul 2>&1
-)
-
-REM ---- Portas 8080/8081 livres ----
-netstat -ano -p tcp | findstr /C:":8080 " | findstr /C:"LISTENING" >nul
-if not errorlevel 1 (
-    echo [ERRO] Porta 8080 ocupada. Feche as janelas "Grape HTTP/WebSocket" ou rode: taskkill /F /IM php.exe
-    pause
-    exit /b 1
-)
-netstat -ano -p tcp | findstr /C:":8081 " | findstr /C:"LISTENING" >nul
-if not errorlevel 1 (
-    echo [ERRO] Porta 8081 ocupada. Feche as janelas "Grape HTTP/WebSocket" ou rode: taskkill /F /IM php.exe
-    pause
-    exit /b 1
 )
 
 REM ---- IP do Radmin VPN (26.x.x.x) para o link de convite ----

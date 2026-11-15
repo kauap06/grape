@@ -3,15 +3,22 @@ logs/*
 !logs/.gitkeep
 *.log
 
-# Dados do banco portavel: maquina-especifica, com hashes de senha - NUNCA versionar
+# Banco de dados portavel: dados contem senhas e informacoes de usuario - NUNCA versionar
 portable/mariadb/data/
 
-# Credenciais e segredos
+# PHP portavel: php.ini contem caminhos absolutos locais (opcache.file_cache) - criar por instalacao
+portable/php/php.ini
+
+# Sessoes PHP: dados de sessao em tempo de execucao - nao versionar
+data/sessions/
+
+# Credenciais e segredos - nunca versionar
 .env
 config/local.php
 
-# Runtime PHP/portavel (grande; restauravel do original)
-portable/
+# Runtime portavel: PHP, MariaDB, Caddy e Composer estao versionados
+# para instalacao zero-configuracao ("baixar e usar").
+# O que permanece fora: dados do banco, php.ini com caminhos locais, sessoes, credenciais.
 
 # Dependencias (recriaveis com composer install)
 vendor/
