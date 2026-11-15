@@ -1,10 +1,4 @@
 @echo off
-REM ============================================
-REM Grape - Local Hosting Startup Script (Windows)
-REM Inicia MariaDB, PHP (8080), WebSocket (8081) e Caddy (443).
-REM Saida minima: apenas erros/avisos e o resumo final.
-REM ============================================
-
 setlocal enabledelayedexpansion
 
 cd /d "%~dp0.."
@@ -15,28 +9,21 @@ REM ---- PHP ----
 set PHP_EXE=
 if exist "%PROJECT_DIR%\portable\php\php.exe" set PHP_EXE=%PROJECT_DIR%\portable\php\php.exe
 if not defined PHP_EXE for /f "tokens=*" %%i in ('where php 2^>nul') do if not defined PHP_EXE set PHP_EXE=%%i
-if not defined PHP_EXE if exist "C:\php\php.exe" set PHP_EXE=C:\php\php.exe
 if not defined PHP_EXE (
-    echo [ERRO] PHP nao encontrado. Use o PHP portavel em portable\php\php.exe ou instale PHP 8.2+.
+    echo [ERRO] PHP nao encontrado.
     pause
     exit /b 1
 )
 
 "%PHP_EXE%" -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;" > "%TEMP%\grape_phpver.txt" 2>nul
 set PHP_VERSION=unknown
-if exist "%TEMP%\grape_phpver.txt" (
-    set /p PHP_VERSION= < "%TEMP%\grape_phpver.txt"
-    del "%TEMP%\grape_phpver.txt" 2>nul
-)
+if exist "%TEMP%\grape_phpver.txt" set /p PHP_VERSION= < "%TEMP%\grape_phpver.txt" & del "%TEMP%\grape_phpver.txt" 2>nul
 if "%PHP_VERSION%"=="unknown" (
     echo [ERRO] Falha ao executar o PHP.
     pause
     exit /b 1
 )
-for /f "tokens=1,2 delims=." %%a in ("%PHP_VERSION%") do (
-    set MAJOR=%%a
-    set MINOR=%%b
-)
+for /f "tokens=1,2 delims=." %%a in ("%PHP_VERSION%") do set MAJOR=%%a&set MINOR=%%b
 if %MAJOR% LSS 8 (
     echo [ERRO] PHP 8.2+ necessario, encontrado %PHP_VERSION%.
     pause
@@ -57,19 +44,15 @@ if not exist "%PROJECT_DIR%\vendor\autoload.php" (
     )
 )
 if not exist "%PROJECT_DIR%\vendor\autoload.php" (
-    echo [ERRO] Dependencias do Composer ausentes e nao foi possivel instala-las.
+    echo [ERRO] Dependencias do Composer ausentes.
     pause
     exit /b 1
 )
 
 if not exist "%PROJECT_DIR%\logs" mkdir "%PROJECT_DIR%\logs"
 
-REM ---- Limpeza de portas (ANTES de subir qualquer servico) ----
-REM Encerra processos do Grape (php/caddy/mysqld do portable, websocket, Caddyfile).
-REM Programas de terceiros nas portas abortam o inicio, com nome e PID.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$alvo = Get-CimInstance Win32_Process -Filter \"Name='php.exe' or Name='caddy.exe' or Name='mysqld.exe'\" | Where-Object { $_.ExecutablePath -like ($env:PROJECT_DIR + '\portable\*') -or $_.CommandLine -like '*websocket-server.php*' -or $_.CommandLine -like '*deploy*Caddyfile*' }; foreach ($proc in $alvo) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop; Write-Host ('  [limpo] processo ' + $proc.ProcessId + ' encerrado') } catch {} }"
-
-REM Aguarda as portas serem liberadas pelo sistema
+REM ---- Limpeza de portas ----
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$alvo = Get-CimInstance Win32_Process -Filter \"Name='php.exe' or Name='caddy.exe' or Name='mysqld.exe'\" | Where-Object { $_.ExecutablePath -like '*grape*portable*' -or $_.CommandLine -like '*websocket-server.php*' -or $_.CommandLine -like '*deploy*Caddyfile*' }; foreach ($proc in $alvo) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop; Write-Host ('  [limpo] processo ' + $proc.ProcessId + ' encerrado') } catch {} }"
 ping -n 3 -w 1000 127.0.0.1 >nul 2>&1
 
 for %%P in (8080 8081 443) do (
@@ -79,13 +62,13 @@ for %%P in (8080 8081 443) do (
             set "NOME_PROC=desconhecido"
             for /f "skip=2 tokens=1" %%N in ('tasklist /fi "PID eq %%A"') do set "NOME_PROC=%%N"
             echo [ERRO] Porta %%P ocupada pelo processo !NOME_PROC! com PID %%A. Encerre-o e rode o start-host de novo.
+            pause
+            exit /b 1
         )
-        pause
-        exit /b 1
     )
 )
 
-REM ---- MariaDB (loopback, local_infile off) ----
+REM ---- MariaDB ----
 set MYSQL_ALREADY_RUNNING=0
 netstat -ano -p tcp | findstr /C:":3306 " | findstr /C:"LISTENING" >nul
 if not errorlevel 1 set MYSQL_ALREADY_RUNNING=1
@@ -97,17 +80,16 @@ set MYSQLD_PORTABLE=0
 if defined MYSQLD_EXE if "%MYSQLD_EXE%" == "%PROJECT_DIR%\portable\mariadb\bin\mysqld.exe" set MYSQLD_PORTABLE=1
 
 if %MYSQL_ALREADY_RUNNING% EQU 1 (
-    echo MariaDB: reutilizando o servidor ja ativo na porta 3306.
+    echo MariaDB: ja esta rodando na porta 3306.
 ) else (
     if not defined MYSQLD_EXE (
-        echo [ERRO] mysqld nao encontrado ^(portable\mariadb ou PATH^). Restaure o MariaDB portavel.
+        echo [ERRO] mysqld nao encontrado.
         pause
         exit /b 1
     )
     if %MYSQLD_PORTABLE% EQU 1 if not exist "%PROJECT_DIR%\portable\mariadb\data\mysql" (
-        echo Preparando banco de dados ^(primeira execucao^)...
+        echo Preparando banco de dados...
         "%PROJECT_DIR%\portable\mariadb\bin\mariadb-install-db.exe" --datadir="%PROJECT_DIR%\portable\mariadb\data" --default-user >nul 2>&1
-        set GRAPE_DB_FRESH=1
     )
     start "Grape MariaDB (3306)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" --datadir="%PROJECT_DIR%\portable\mariadb\data" --bind-address=127.0.0.1 --local-infile=0 --console > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
     set MYSQL_STARTED=0
@@ -128,34 +110,33 @@ if %MYSQL_ALREADY_RUNNING% EQU 1 (
     )
 )
 
-REM ---- Banco: usuario da aplicacao + schema (idempotente) ----
+REM ---- Banco: usuario e schema ----
 if exist "%PROJECT_DIR%\database\bootstrap.php" (
     "%PHP_EXE%" "%PROJECT_DIR%\database\bootstrap.php" >nul 2>&1
     if errorlevel 1 (
         "%PHP_EXE%" "%PROJECT_DIR%\database\bootstrap.php"
-        echo [ERRO] Falha ao preparar o banco. Confira a mensagem acima.
+        echo [ERRO] Falha ao preparar o banco.
         pause
         exit /b 1
     )
     "%PHP_EXE%" "%PROJECT_DIR%\database\migrate.php" >nul 2>&1
 )
 
-REM ---- IP do Radmin VPN (26.x.x.x) para o link de convite ----
+REM ---- IP do Radmin VPN ----
 set RADMIN_IP=
 for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '26.*' } | Select-Object -First 1).IPAddress"`) do set RADMIN_IP=%%i
 if not defined RADMIN_IP (
-    echo AVISO: IP do Radmin VPN nao encontrado - convidados nao conseguira conectar.
+    echo AVISO: IP do Radmin VPN nao encontrado.
     set RADMIN_IP=127.0.0.1
 )
 
-REM ---- Servicos (janelas separadas) ----
-REM PHP e WebSocket ficam em 127.0.0.1; so o Caddy (443) fica exposto.
+REM ---- Servicos ----
 start "Grape HTTP (8080)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" -S 127.0.0.1:8080 -t public > "%PROJECT_DIR%\logs\http.log" 2>&1"
 start "Grape WebSocket (8081)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" server/websocket-server.php > "%PROJECT_DIR%\logs\websocket.log" 2>&1"
 
 tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
 if not errorlevel 1 (
-    echo AVISO: Apache do XAMPP esta rodando e pode ocupar a porta 443/80 e impedir o Caddy. Pare-o no XAMPP Control Panel.
+    echo AVISO: Apache do XAMPP pode ocupar a porta 443/80.
 )
 
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
@@ -167,7 +148,7 @@ if defined CADDY_EXE (
 ) else (
     where caddy >nul 2>&1
     if errorlevel 1 (
-        echo AVISO: Caddy nao encontrado - sem HTTPS, camera/microfone/tela nao funcionam para convidados.
+        echo AVISO: Caddy nao encontrado.
     ) else (
         start "Grape HTTPS (Caddy)" /D "%PROJECT_DIR%" cmd /c "caddy run --config deploy\Caddyfile > logs\caddy.log 2>&1"
     )
@@ -175,40 +156,23 @@ if defined CADDY_EXE (
 
 ping -n 4 -w 1000 127.0.0.1 >nul 2>&1
 
-REM ---- CA: confia no certificado local e gera o instalador dos convidados ----
+REM ---- CA ----
 if exist "%PROJECT_DIR%\deploy\ca\install-ca.bat" call "%PROJECT_DIR%\deploy\ca\install-ca.bat" /silent >nul 2>&1
 if exist "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" call "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" >nul 2>&1
 
-REM Aquece o opcache para o primeiro acesso nao demorar
+REM Aquece o opcache
 if exist "%SystemRoot%\System32\curl.exe" (
     curl.exe -s -k -o NUL --max-time 8 https://localhost/ >nul 2>&1
     curl.exe -s -k -o NUL --max-time 8 https://localhost/ >nul 2>&1
 )
 
-REM ---- Verificacao final ----
-set WS_STARTED=0
-set HTTP_STARTED=0
-if exist "%PROJECT_DIR%\logs\websocket.log" (
-    findstr /C:"Listening on" "%PROJECT_DIR%\logs\websocket.log" >nul 2>&1
-    if not errorlevel 1 set WS_STARTED=1
-)
-if exist "%PROJECT_DIR%\logs\http.log" (
-    findstr /C:"Development Server" "%PROJECT_DIR%\logs\http.log" >nul 2>&1
-    if not errorlevel 1 set HTTP_STARTED=1
-)
-
 echo.
-if %HTTP_STARTED% EQU 1 (
-    echo Grape iniciado.
-) else (
-    echo Grape iniciado com problemas - veja logs\http.log
-)
-if %WS_STARTED% EQU 0 echo [AVISO] WebSocket pode nao ter iniciado - veja logs\websocket.log
+echo Grape iniciado.
 echo   Neste PC:   https://localhost
-echo   Convidados: https://%RADMIN_IP%   ^(envie este link; camera/microfone/tela exigem HTTPS^)
-echo   Certificado para convidados: deploy\ca\dist\install-ca.bat
+echo   Convidados: https://%RADMIN_IP%
+echo   Certificado: deploy\ca\dist\install-ca.bat
 echo   Logs: %PROJECT_DIR%\logs
 echo.
-echo Para parar: feche as janelas "Grape ..." ou rode  taskkill /F /IM php.exe ^& taskkill /F /IM caddy.exe ^& taskkill /F /IM mysqld.exe
+echo Para parar: rodar bin\stop-host.bat
 echo.
 pause
