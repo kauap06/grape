@@ -308,7 +308,7 @@ $prefsJson = json_encode(
                                 </button>
                                 <button type="button" class="btn btn-ghost btn-sm" id="profile-photo-remove" hidden>Remover foto</button>
                             </div>
-                            <p class="field-hint">Imagens de até 2 MB. Todos na sala veem a mudança assim que você salvar.</p>
+                            <p class="field-hint">Imagens de até 5 MB. Todos na sala veem a mudança assim que você salvar.</p>
                         </div>
 
                         <div class="settings-group">

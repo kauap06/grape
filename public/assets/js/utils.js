@@ -467,7 +467,7 @@ const Utils = {
   // Avatares
   // ==========================================
   // O avatar trafega como data URL dentro do JSON de 'join' e fica salvo no
-  // banco. Uma foto original (até 2MB) vira ~2,7MB em base64 e o servidor
+  // banco. Uma foto original (até 5MB) vira ~6,7MB em base64 e o servidor
   // WebSocket (Ratchet) corta mensagens acima de 1MB, fechando a conexão - o
   // cliente reconectava para sempre em "Reconectando". Reduzir para 256px JPEG
   // mantém o avatar bonito e o pacote em dezenas de KB.
@@ -477,7 +477,7 @@ const Utils = {
         const image = new Image();
         // Nunca deixa a redução travar a página (data URL corrompida, codec
         // sem suporte, etc.).
-        const timer = setTimeout(() => reject(new Error('Tempo esgotado ao decodificar a imagem')), 5000);
+        const timer = setTimeout(() => reject(new Error('Tempo esgotado ao decodificar a imagem')), 15000);
         image.onload = () => { clearTimeout(timer); resolve(image); };
         image.onerror = () => { clearTimeout(timer); reject(new Error('Falha ao decodificar a imagem')); };
         image.src = dataUrl;

@@ -653,8 +653,8 @@ function onProfilePhotoSelected(e) {
     Toast.error('Por favor, selecione uma imagem válida');
     return;
   }
-  if (file.size > 2 * 1024 * 1024) {
-    Toast.error('A imagem deve ter no máximo 2MB');
+  if (file.size > 5 * 1024 * 1024) {
+    Toast.error('A imagem deve ter no máximo 5MB');
     return;
   }
   const reader = new FileReader();
