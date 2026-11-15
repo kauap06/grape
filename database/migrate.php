@@ -52,3 +52,15 @@ $db->exec(
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 );
 echo "Migracoes: tabela user_preferences pronta" . PHP_EOL;
+// Salas trancadas pelo host (admite moderacao sem recriar a tabela)
+$col = $db->prepare(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rooms' AND COLUMN_NAME = 'is_locked'"
+);
+$col->execute();
+if ((int) $col->fetchColumn() === 0) {
+    $db->exec("ALTER TABLE `rooms` ADD COLUMN `is_locked` BOOLEAN NOT NULL DEFAULT FALSE AFTER `is_active`");
+    echo "Migracao aplicada: rooms.is_locked" . PHP_EOL;
+} else {
+    echo "Migracoes: rooms.is_locked ja existe" . PHP_EOL;
+}

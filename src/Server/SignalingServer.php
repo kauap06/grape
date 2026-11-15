@@ -30,8 +30,11 @@ class SignalingServer implements MessageComponentInterface
     /** @var array<int, array{window_start: int, count: int}> Janela deslizante por conexao (security.rate_limit.websocket) */
     protected array $rateLimitBuckets = [];
 
+    protected LoopInterface $loop;
+
     public function __construct(LoopInterface $loop)
     {
+        $this->loop = $loop;
         // Start heartbeat checker
         $this->startHeartbeat($loop);
     }
@@ -114,6 +117,22 @@ class SignalingServer implements MessageComponentInterface
                 case 'profile-update':
                     $this->handleProfileUpdate($from, $payload);
                     break;
+                // --- moderacao (somente host) ---
+                case 'admin-mute':
+                    $this->handleAdminMute($from, $payload);
+                    break;
+                case 'admin-camera':
+                    $this->handleAdminCamera($from, $payload);
+                    break;
+                case 'admin-kick':
+                    $this->handleAdminKick($from, $payload);
+                    break;
+                case 'admin-lock':
+                    $this->handleAdminLock($from, $payload);
+                    break;
+                case 'admin-mute-all':
+                    $this->handleAdminMuteAll($from);
+                    break;
                 default:
                     $this->sendError($from, 'UNKNOWN_TYPE', "Unknown message type: $type");
             }
@@ -180,8 +199,11 @@ class SignalingServer implements MessageComponentInterface
             return;
         }
 
-        if (!$room->canJoin()) {
-            $this->sendError($conn, 'ROOM_FULL', 'Room is full or expired');
+        // Host entra mesmo com a sala trancada ou cheia
+        $isHostEarly = hash_equals($room->creatorSessionId, (string) $sessionId);
+        if (!$isHostEarly && !$room->canJoin()) {
+            $this->sendError($conn, $room->isLocked ? 'ROOM_LOCKED' : 'ROOM_FULL',
+                $room->isLocked ? 'Room is locked by the host' : 'Room is full or expired');
             return;
         }
 
@@ -189,11 +211,15 @@ class SignalingServer implements MessageComponentInterface
         $participant = Participant::create($room->id, $sessionId, $displayName, $avatarData, $metadata);
         
         // Store connection info
+        // Host = quem criou a sala. Só ele recebe is_host e pode moderar.
+        $isHost = hash_equals($room->creatorSessionId, (string) $sessionId);
+
         $this->connectionInfo[$conn->resourceId] = [
             'room_id' => $room->id,
             'participant_id' => $participant->id,
             'session_id' => $sessionId,
             'metadata' => $metadata,
+            'is_host' => $isHost,
         ];
 
         // Add to room connections
@@ -219,6 +245,9 @@ class SignalingServer implements MessageComponentInterface
                 'participant' => $participant->toPublicArray(),
                 'participants' => $participantList,
                 'webrtc_config' => $this->getWebRTCConfig(),
+                'is_host' => $isHost,
+                'creator_session_id' => $room->creatorSessionId,
+                'is_locked' => $room->isLocked,
             ],
         ]);
 
@@ -421,6 +450,163 @@ class SignalingServer implements MessageComponentInterface
                 'avatar_data' => $avatarData,
             ],
         ], $resourceId);
+    }
+
+    // ========================================================================
+    // Moderacao: apenas o host da sala. O alvo e sempre outro participante.
+    // ========================================================================
+
+    /**
+     * Confere se a conexao e do host e devolve o room_id; senao responde erro.
+     */
+    protected function requireHost(ConnectionInterface $conn): ?int
+    {
+        $info = $this->connectionInfo[$conn->resourceId] ?? null;
+        if (!$info) {
+            $this->sendError($conn, 'NOT_IN_ROOM', 'Join a room first');
+            return null;
+        }
+        if (empty($info['is_host'])) {
+            $this->sendError($conn, 'NOT_HOST', 'Only the room host can do this');
+            return null;
+        }
+        return (int) $info['room_id'];
+    }
+
+
+    protected function handleAdminMute(ConnectionInterface $from, array $payload): void
+    {
+        $roomId = $this->requireHost($from);
+        if ($roomId === null) {
+            return;
+        }
+        $targetSession = (string) ($payload['target_session_id'] ?? '');
+        $muted = (bool) ($payload['muted'] ?? true);
+        if ($targetSession === '') {
+            $this->sendError($from, 'INVALID_PAYLOAD', 'target_session_id required');
+            return;
+        }
+
+        $targetId = $this->findConnectionBySession($roomId, $targetSession);
+        $target = $targetId !== null ? ($this->connections[$targetId] ?? null) : null;
+        if (!$target) {
+            $this->sendError($from, 'TARGET_LEFT', 'Target is not in the room');
+            return;
+        }
+
+        $this->send($target, [
+            'type' => 'admin-muted',
+            'payload' => ['muted' => $muted, 'by' => $this->connectionInfo[$from->resourceId]['session_id']],
+        ]);
+        // Espelha para todos: o indicador de microfone na lista precisa refletir
+        $this->broadcastToRoom($roomId, [
+            'type' => 'admin-muted',
+            'payload' => ['session_id' => $targetSession, 'muted' => $muted],
+        ], $target->resourceId);
+    }
+
+    protected function handleAdminCamera(ConnectionInterface $from, array $payload): void
+    {
+        $roomId = $this->requireHost($from);
+        if ($roomId === null) {
+            return;
+        }
+        $targetSession = (string) ($payload['target_session_id'] ?? '');
+        if ($targetSession === '') {
+            $this->sendError($from, 'INVALID_PAYLOAD', 'target_session_id required');
+            return;
+        }
+        $targetId = $this->findConnectionBySession($roomId, $targetSession);
+        $target = $targetId !== null ? ($this->connections[$targetId] ?? null) : null;
+        if (!$target) {
+            $this->sendError($from, 'TARGET_LEFT', 'Target is not in the room');
+            return;
+        }
+
+        $this->send($target, ['type' => 'admin-camera-off', 'payload' => []]);
+        $this->broadcastToRoom($roomId, [
+            'type' => 'admin-camera-off',
+            'payload' => ['session_id' => $targetSession],
+        ], $target->resourceId);
+    }
+
+    protected function handleAdminKick(ConnectionInterface $from, array $payload): void
+    {
+        $roomId = $this->requireHost($from);
+        if ($roomId === null) {
+            return;
+        }
+        $targetSession = (string) ($payload['target_session_id'] ?? '');
+        if ($targetSession === '') {
+            $this->sendError($from, 'INVALID_PAYLOAD', 'target_session_id required');
+            return;
+        }
+        $targetId = $this->findConnectionBySession($roomId, $targetSession);
+        $target = $targetId !== null ? ($this->connections[$targetId] ?? null) : null;
+        if (!$target) {
+            $this->sendError($from, 'TARGET_LEFT', 'Target is not in the room');
+            return;
+        }
+
+        $this->send($target, [
+            'type' => 'kicked',
+            'payload' => ['by' => $this->connectionInfo[$from->resourceId]['session_id']],
+        ]);
+        // Fecha depois de entregar o aviso: fechar na mesma volta do loop pode
+        // descartar o buffer e o cliente reconectaria em vez de sair.
+        $this->loop->addTimer(0.25, static function () use ($target) {
+            try { $target->close(); } catch (\Throwable $e) { /* ja fechado */ }
+        });
+        error_log("Host expulsou {$targetSession} da sala {$roomId}");
+    }
+
+    protected function handleAdminLock(ConnectionInterface $from, array $payload): void
+    {
+        $roomId = $this->requireHost($from);
+        if ($roomId === null) {
+            return;
+        }
+        $locked = (bool) ($payload['locked'] ?? true);
+
+        try {
+            $room = Room::findById($roomId);
+            $room->update(['is_locked' => $locked]);
+        } catch (\Throwable $e) {
+            error_log("Falha ao trancar sala {$roomId}: " . $e->getMessage());
+            $this->sendError($from, 'SERVER_ERROR', 'Could not update the room');
+            return;
+        }
+
+        $this->broadcastToRoom($roomId, [
+            'type' => 'room-lock',
+            'payload' => ['locked' => $locked],
+        ]);
+        error_log("Sala {$roomId} " . ($locked ? 'trancada' : 'destrancada') . ' pelo host');
+    }
+
+    protected function handleAdminMuteAll(ConnectionInterface $from): void
+    {
+        $roomId = $this->requireHost($from);
+        if ($roomId === null) {
+            return;
+        }
+        $hostSession = $this->connectionInfo[$from->resourceId]['session_id'];
+        $muted = 0;
+
+        foreach ($this->roomConnections[$roomId] ?? [] as $conn) {
+            $info = $this->connectionInfo[$conn->resourceId] ?? null;
+            if (!$info || $info['session_id'] === $hostSession) {
+                continue; // nao silencia o proprio host
+            }
+            $this->send($conn, ['type' => 'admin-muted', 'payload' => ['muted' => true, 'by' => $hostSession]]);
+            $muted++;
+        }
+
+        $this->broadcastToRoom($roomId, [
+            'type' => 'admin-mute-all',
+            'payload' => ['by' => $hostSession, 'count' => $muted],
+        ]);
+        error_log("Host silenciou {$muted} participante(s) na sala {$roomId}");
     }
 
     protected function handlePing(ConnectionInterface $from): void

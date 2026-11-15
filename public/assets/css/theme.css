@@ -344,3 +344,10 @@ body.is-compact .chat-message-avatar { width: 18px; height: 18px; font-size: 9px
   mask: var(--ic-camera) center / contain no-repeat;
 }
 .avatar-upload-btn:hover .avatar-upload-icon { color: var(--color-accent-primary); }
+
+/* Quinas de redimensionar a camera: discretas no modo compacto */
+body.is-compact .pane-resize-corner::after {
+  border-color: var(--min-line);
+  border-radius: 2px;
+}
+body.is-compact .pane-resize-corner:hover::after { border-color: var(--color-accent-primary); }

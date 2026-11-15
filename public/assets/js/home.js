@@ -406,6 +406,8 @@ async function joinRoom() {
     if (response.success) {
       Toast.success('Entrou na sala!');
       window.location.href = `${API.baseUrl}/room.php?code=${inviteCode}`;
+    } else if (response.locked) {
+      throw new Error('A sala está trancada pelo anfitrião');
     } else {
       throw new Error(response.error || 'Falha ao entrar na sala');
     }

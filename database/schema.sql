@@ -21,6 +21,8 @@ CREATE TABLE `rooms` (
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `expires_at` TIMESTAMP NULL DEFAULT NULL,
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Sala trancada pelo host: ninguem novo entra
+    `is_locked` BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_invite_code` (`invite_code`),
     INDEX `idx_creator_session` (`creator_session_id`),

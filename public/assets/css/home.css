@@ -20,7 +20,7 @@
   padding: clamp(14px, 3vh, 32px) var(--space-lg) 0;
   display: flex; align-items: center; justify-content: center;
 }
-.logo { display: flex; align-items: center; gap: var(--space-md); }
+.logo { display: flex; align-items: center; gap: var(--space-md); margin-top: 20px; }
 .logo-mark { width: clamp(52px, 8vh, 80px); height: auto; display: block; filter: drop-shadow(0 4px 14px rgba(150, 70, 240, 0.4)); }
 .logo-text {
   font-size: clamp(36px, 6vh, 56px); font-weight: var(--font-weight-bold);

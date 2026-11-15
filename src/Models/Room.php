@@ -20,6 +20,7 @@ class Room
     public readonly string $updatedAt;
     public readonly ?string $expiresAt;
     public readonly bool $isActive;
+    public readonly bool $isLocked;
 
     public function __construct(array $data)
     {
@@ -33,6 +34,8 @@ class Room
         $this->updatedAt = $data['updated_at'];
         $this->expiresAt = $data['expires_at'];
         $this->isActive = (bool)$data['is_active'];
+        // Coluna criada pela migracao; ausente em SELECTs antigos
+        $this->isLocked = (bool)($data['is_locked'] ?? false);
     }
 
     public static function create(string $name, string $creatorSessionId, array $options = []): self
@@ -109,7 +112,7 @@ class Room
 
     public function update(array $data): bool
     {
-        $allowed = ['name', 'max_participants', 'settings', 'expires_at', 'is_active'];
+        $allowed = ['name', 'max_participants', 'settings', 'expires_at', 'is_active', 'is_locked'];
         $fields = [];
         $values = [];
 
@@ -151,6 +154,9 @@ class Room
         if ($this->expiresAt && strtotime($this->expiresAt) < time()) {
             return false;
         }
+        if ($this->isLocked) {
+            return false;
+        }
         return $this->getActiveParticipantCount() < $this->maxParticipants;
     }
 
@@ -175,6 +181,7 @@ class Room
             'updated_at' => $this->updatedAt,
             'expires_at' => $this->expiresAt,
             'is_active' => $this->isActive,
+            'is_locked' => $this->isLocked,
             'participant_count' => $this->getActiveParticipantCount(),
             'join_url' => $this->getJoinUrl(),
         ];

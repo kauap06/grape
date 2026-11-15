@@ -4,7 +4,7 @@
  * (câmera e/ou tela de quem está selecionado).
  */
 
-import { Logger, Toast, Modal, Storage, Devices, Utils } from './utils.js';
+import { Logger, Toast, Modal, Storage, Devices, Utils, API } from './utils.js';
 
 // ============================================
 // Constantes
@@ -41,6 +41,10 @@ const state = {
   sessionId: '',
   displayName: '',
   avatar: '',
+
+  // Moderacao (host = quem criou a sala)
+  isHost: false,
+  isLocked: false,
 
   // Connection
   ws: null,
@@ -171,6 +175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupMediaSession();
   setupFloatingCamera();
+  setupCameraResize();
   updateMediaButtons();
   renderAll();
   setupMediaDevices();
@@ -364,6 +369,7 @@ function cacheElements() {
   elements.profilePhotoRemove = $('profile-photo-remove');
   elements.profilePhotoInput = $('profile-photo-input');
   elements.compactMode = $('room-compact-mode');
+  elements.muteAllBtn = $('mute-all-btn');
 
   if (elements.roomName) elements.roomName.textContent = state.roomName;
 }
@@ -458,6 +464,7 @@ function setupEventListeners() {
   elements.compactMode?.addEventListener('change', () => {
     setCompactMode(elements.compactMode.checked);
   });
+  elements.muteAllBtn?.addEventListener('click', () => sendWebSocketMessage('admin-mute-all', {}));
   elements.maxBitrate?.addEventListener('input', (e) => {
     if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${e.target.value} kbps`;
   });
@@ -787,6 +794,7 @@ function initializeWebSocket() {
       Logger.log(`WebSocket disconnected (${wsUrl}) code=${event.code}`);
       state.wsConnected = false;
       updateConnectionStatus('disconnected');
+      if (state.kicked) return; // expulso: não reconecta, a página já vai redirecionar
       scheduleReconnect();
     };
 
@@ -887,6 +895,23 @@ function handleWebSocketMessage(message) {
       // O servidor derruba a conexão se não responder ao ping
       sendWebSocketMessage('pong', {});
       break;
+    case 'admin-muted':
+      handleAdminMuted(message.payload);
+      break;
+    case 'admin-camera-off':
+      handleAdminCameraOff(message.payload);
+      break;
+    case 'admin-mute-all':
+      if (message.payload?.by !== state.sessionId) Toast.info('O host silenciou todos');
+      break;
+    case 'kicked':
+      handleKicked(message.payload);
+      break;
+    case 'room-lock':
+      state.isLocked = message.payload?.locked === true;
+      renderAdminControls();
+      Toast.info(state.isLocked ? 'A sala foi trancada pelo host' : 'A sala foi destrancada');
+      break;
   }
 }
 
@@ -904,6 +929,11 @@ function handleJoined(payload) {
 
   state.roomName = payload.room.name;
   state.maxParticipants = payload.room.max_participants;
+  state.hostSessionId = payload.creator_session_id || '';
+  state.isHost = payload.is_host === true;
+  state.isLocked = payload.is_locked === true;
+  document.body.classList.toggle('is-host', state.isHost);
+  renderAdminControls();
   elements.roomName.textContent = state.roomName;
   if (!state.joinedAt) state.joinedAt = Date.now();
   startTimer();
@@ -1438,13 +1468,15 @@ async function initializeLocalMedia() {
     return;
   }
 
+  const micValido = await micIdValido();
+
   try {
     const constraints = await Devices.getConstraints(true, true, {
       width: 1280,
       height: 720,
       frameRate: 30,
       deviceId: devicePrefs.cameraId || undefined,
-      audioDeviceId: devicePrefs.micId || undefined,
+      audioDeviceId: micValido || undefined,
       noiseSuppression: state.settings.noiseSuppression,
       echoCancellation: state.settings.echoCancellation
     });
@@ -1583,7 +1615,7 @@ async function toggleCamera() {
     }
   } catch (e) {
     Logger.error('Toggle camera failed:', e);
-    Toast.error(`Erro ao ligar a câmera: ${escapeHtml(e.message)}`);
+    Toast.error(mensagemErroCamera(e));
     return;
   }
 
@@ -1602,19 +1634,98 @@ function stopCamera() {
   state.media.cameraMuted = true;
 }
 
+// Mensagem em português para as falhas comuns de câmera
+function mensagemErroCamera(e) {
+  switch (e?.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Permissão de câmera negada. Libere a câmera para este site no cadeado da barra de endereço.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'A câmera está ocupada por outro programa (OBS, Zoom, Discord...). Feche-o e tente de novo.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'Nenhuma câmera encontrada neste computador.';
+    case 'OverconstrainedError':
+      return 'A câmera não aceitou a resolução pedida.';
+    default:
+      return e?.message ? 'Falha ao acessar a câmera.' : 'Não foi possível ligar a câmera.';
+  }
+}
+
+// O deviceId salvo pode não existir mais (câmera trocada, outro perfil do
+// navegador, IDs regenerados). Se não estiver na lista atual, ignora.
+async function cameraIdValido() {
+  const salvo = Storage.get('devices', {}).cameraId;
+  if (!salvo) return null;
+  try {
+    const lista = await Devices.enumerate();
+    if (lista.cameras.some(c => c.deviceId === salvo)) return salvo;
+    // Salvo aponta para câmera que não existe mais: descarta para não insistir
+    Storage.set('devices', { ...Storage.get('devices', {}), cameraId: null });
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Mesmo cuidado com o microfone: deviceId que não existe mais derrubaria o áudio
+async function micIdValido() {
+  const salvo = Storage.get('devices', {}).micId;
+  if (!salvo) return null;
+  try {
+    const lista = await Devices.enumerate();
+    if (lista.microphones.some(m => m.deviceId === salvo)) return salvo;
+    Storage.set('devices', { ...Storage.get('devices', {}), micId: null });
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Tenta na ordem: preferências do usuário -> qualquer câmera -> resolução menor
+async function abrirCamera() {
+  const deviceId = await cameraIdValido();
+  const tentativas = [];
+
+  if (deviceId) {
+    tentativas.push({ width: 1280, height: 720, deviceId });
+    tentativas.push({ width: 640, height: 480, deviceId });
+  }
+  tentativas.push({ width: 1280, height: 720 });
+  tentativas.push({ width: 640, height: 480 });
+
+  let ultimoErro = null;
+  for (const opcao of tentativas) {
+    const constraints = await Devices.getConstraints(true, false, {
+      ...opcao,
+      frameRate: state.settings.frameRate || 30
+    });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Caindo para "qualquer câmera", esquece o deviceId quebrado
+      if (!opcao.deviceId && deviceId) {
+        const salvo = Storage.get('devices', {});
+        Storage.set('devices', { ...salvo, cameraId: null });
+        setupMediaDevices().catch(() => {});
+      }
+      return stream;
+    } catch (e) {
+      ultimoErro = e;
+      // Permissão negada não melhora tentando de novo
+      if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') break;
+    }
+  }
+  throw ultimoErro || new Error('Não foi possível ligar a câmera.');
+}
+
 async function startCamera() {
   if (!hasMediaDevices) {
     Toast.error(mediaUnavailableMessage('A câmera'));
     return;
   }
 
-  const constraints = await Devices.getConstraints(true, false, {
-    width: 1280,
-    height: 720,
-    frameRate: state.settings.frameRate || 30,
-    deviceId: Storage.get('devices', {}).cameraId || undefined
-  });
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const stream = await abrirCamera();
   state.localStream.addTrack(stream.getVideoTracks()[0]);
   state.media.cameraMuted = false;
 
@@ -1741,7 +1852,7 @@ async function applyVideoConstraints() {
 async function testMediaDevices() {
   const constraints = await Devices.getConstraints(true, true, {
     deviceId: elements.cameraSelect.value || undefined,
-    audioDeviceId: elements.micSelect.value || undefined,
+    audioDeviceId: (await micIdValido()) || undefined,
     noiseSuppression: state.settings.noiseSuppression,
     echoCancellation: state.settings.echoCancellation
   });
@@ -1890,6 +2001,7 @@ function renderStage() {
   elements.viewTabCamera.hidden = !showKindTabs;
   elements.viewTabScreen.hidden = !showKindTabs;
   elements.viewTabGrid.setAttribute('aria-selected', String(grid));
+  syncCamResizeAvailability();
 
   if (grid) {
     elements.viewingName.textContent = 'Todos os participantes';
@@ -2092,6 +2204,207 @@ function renderPane(kind, { visible, stream, muted = true, emptyKey, emptyHtml }
 // ============================================
 // Lista de participantes
 // ============================================
+// ---- Moderacao (host) ------------------------------------------------------
+function renderAdminControls() {
+  if (elements.muteAllBtn) {
+    elements.muteAllBtn.hidden = !state.isHost || state.participants.size < 2;
+  }
+}
+
+
+// Sem session_id no payload = comando direto para mim; com session_id = estado de outro
+function handleAdminMuted(payload) {
+  if (!payload?.session_id) {
+    const querMudo = payload?.muted === true;
+    if (querMudo === state.media.microphoneMuted) return;
+
+    setMicMuted(querMudo);
+    // sem tracks o setMicMuted sai cedo: o estado e a dock precisam refletir assim mesmo
+    state.media.microphoneMuted = querMudo;
+    broadcastMediaState();
+    updateMediaButtons();
+    renderAll();
+    Toast.info(querMudo ? 'O host silenciou seu microfone' : 'O host liberou seu microfone');
+    return;
+  }
+  const p = state.participants.get(payload.session_id);
+  if (p) {
+    p.metadata = { ...(p.metadata || {}), microphoneMuted: payload.muted === true };
+    renderParticipants();
+  }
+}
+
+function handleAdminCameraOff(payload) {
+  if (!payload?.session_id) {
+    if (!state.media.cameraMuted && state.localStream?.getVideoTracks().length) {
+      stopCamera();
+      broadcastMediaState();
+      updateMediaButtons();
+      renderAll();
+      Toast.info('O host desligou sua camera');
+    }
+    return;
+  }
+  const p = state.participants.get(payload.session_id);
+  if (p) {
+    p.metadata = { ...(p.metadata || {}), cameraMuted: true };
+    renderParticipants();
+  }
+}
+
+function handleKicked() {
+  state.kicked = true;
+  Toast.warning('Voce foi removido da sala pelo host');
+  try { state.ws?.close(); } catch { /* já fechado */ }
+  setTimeout(() => { window.location.href = `${API.baseUrl}/`; }, 900);
+}
+
+// ---- Redimensionamento da janela da câmera -------------------------------
+// A janela flutuante da câmera (aba de tela) se comporta como uma janela
+// comum: qualquer uma das quatro quinas redimensiona mantendo a proporção,
+// com o canto oposto servindo de âncora.
+const CAM_FLOAT_W_KEY = 'cameraFloatWidth';
+const FLOAT_MIN_W = 150;
+const FLOAT_MAX_W = 640;
+const FLOAT_PROPORCAO = 16 / 9;
+
+function floatWidthStored() {
+  const v = Number(Storage.get('roomView', {})[CAM_FLOAT_W_KEY]);
+  return Number.isFinite(v) ? Math.min(FLOAT_MAX_W, Math.max(FLOAT_MIN_W, v)) : null;
+}
+
+function aplicarLarguraFlutuante(largura, { reposicionar = true } = {}) {
+  const pane = elements.panes?.camera?.pane;
+  if (!pane) return;
+  const w = Math.min(FLOAT_MAX_W, Math.max(FLOAT_MIN_W, largura));
+  pane.style.width = `${w}px`;
+  if (reposicionar) positionFloatingCamera();
+}
+
+function salvarLarguraFlutuante() {
+  const pane = elements.panes?.camera?.pane;
+  if (!pane) return;
+  const view = Storage.get('roomView', {});
+  view[CAM_FLOAT_W_KEY] = Math.round(pane.getBoundingClientRect().width);
+  Storage.set('roomView', view);
+}
+
+// A quina só existe na aba de tela, com a câmera flutuando sobre a tela
+function syncCamResizeAvailability() {
+  const pane = elements.panes?.camera?.pane;
+  const stage = elements.stage;
+  if (!pane || !stage) return;
+  const flutuando = pane.classList.contains('is-floating');
+
+  if (flutuando) {
+    const salvo = floatWidthStored();
+    if (salvo) aplicarLarguraFlutuante(salvo);
+  } else {
+    pane.style.removeProperty('width');
+    pane.style.removeProperty('left');
+    pane.style.removeProperty('top');
+  }
+}
+
+function setupCameraResize() {
+  const stage = elements.stage;
+  const pane = elements.panes?.camera?.pane;
+  if (!stage || !pane) return;
+
+  const iniciar = (e, canto) => {
+    if (e.button !== 0 || !pane.classList.contains('is-floating')) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const caixaStage = stage.getBoundingClientRect();
+    const caixa = pane.getBoundingClientRect();
+    const inicioX = e.clientX;
+    const inicioY = e.clientY;
+    const baseW = caixa.width;
+    const baseH = caixa.height;
+    // posição relativa ao palco (a pane é absoluta dentro dele)
+    const baseLeft = caixa.left - caixaStage.left;
+    const baseTop = caixa.top - caixaStage.top;
+    const proporcao = baseH > 0 ? baseW / baseH : FLOAT_PROPORCAO;
+    const oeste = canto === 'nw' || canto === 'sw';
+    const norte = canto === 'nw' || canto === 'ne';
+    const larguraMinima = Math.max(FLOAT_MIN_W, (140) * proporcao);
+
+    document.body.classList.add('pane-resizing');
+    pane.style.left = `${baseLeft}px`;
+    pane.style.top = `${baseTop}px`;
+
+    // Não deixa a janela sair do palco: limita pela borda do lado oposto
+    const larguraMaxima = Math.min(
+      FLOAT_MAX_W,
+      oeste ? baseLeft + baseW : caixaStage.width - baseLeft,
+      norte ? (baseTop + baseH) * proporcao : (caixaStage.height - baseTop) * proporcao
+    );
+
+    const aoMover = (ev) => {
+      const dx = ev.clientX - inicioX;
+      const dy = ev.clientY - inicioY;
+      // afastar do centro cresce; o eixo dominante comanda e o outro vem da proporção
+      const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy * proporcao;
+      const bruta = oeste ? baseW - delta : baseW + delta;
+      const largura = Math.max(larguraMinima, Math.min(larguraMaxima, bruta));
+      const altura = largura / proporcao;
+
+      pane.style.width = `${largura}px`;
+      pane.style.left = `${oeste ? baseLeft + (baseW - largura) : baseLeft}px`;
+      pane.style.top = `${norte ? baseTop + (baseH - altura) : baseTop}px`;
+    };
+
+    const aoSoltar = () => {
+      document.removeEventListener('pointermove', aoMover);
+      document.removeEventListener('pointerup', aoSoltar);
+      document.body.classList.remove('pane-resizing');
+      salvarLarguraFlutuante();
+      // guarda a posição resultante para o próximo render não pular
+      const fimStage = stage.getBoundingClientRect();
+      const fim = pane.getBoundingClientRect();
+      const livreX = Math.max(0, fimStage.width - fim.width - 24);
+      const livreY = Math.max(0, fimStage.height - fim.height - 24);
+      state.camPos = {
+        x: livreX > 0 ? Math.min(1, Math.max(0, (fim.left - fimStage.left - 12) / livreX)) : 1,
+        y: livreY > 0 ? Math.min(1, Math.max(0, (fim.top - fimStage.top - 12) / livreY)) : 1
+      };
+      Storage.set('cameraPos', state.camPos);
+      positionFloatingCamera();
+    };
+
+    document.addEventListener('pointermove', aoMover);
+    document.addEventListener('pointerup', aoSoltar);
+  };
+
+  // Só inicia perto do traço desenhado: assim a área extra não rouba o clique
+  // do botão de fechar (que fica logo acima da quina nordeste).
+  const aceitaInicio = (quina, e) => {
+    const r = quina.getBoundingClientRect();
+    const canto = quina.dataset.corner;
+    const pertoX = canto.includes('e') ? r.right - e.clientX : e.clientX - r.left;
+    const pertoY = canto.includes('s') ? r.bottom - e.clientY : e.clientY - r.top;
+    return pertoX <= 22 && pertoY <= 22;
+  };
+
+  pane.querySelectorAll('.pane-resize-corner').forEach((quina) => {
+    quina.addEventListener('pointerdown', (e) => {
+      if (!aceitaInicio(quina, e)) return;
+      iniciar(e, quina.dataset.corner);
+    });
+    quina.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const view = Storage.get('roomView', {});
+      delete view[CAM_FLOAT_W_KEY];
+      Storage.set('roomView', view);
+      pane.style.removeProperty('width');
+      pane.style.removeProperty('left');
+      pane.style.removeProperty('top');
+      positionFloatingCamera();
+    });
+  });
+}
+
 function renderParticipants() {
   if (!elements.participantsList) return;
 
@@ -2136,7 +2449,7 @@ function renderParticipants() {
         <button class="person-main" type="button" data-select="${escapeAttr(id)}" aria-current="${active}">
           ${avatarHtml(p)}
           <span class="person-text">
-            <span class="person-name">${escapeHtml(p.display_name || 'Jogador')}${isSelf ? ' (você)' : ''}</span>
+            <span class="person-name">${escapeHtml(p.display_name || 'Jogador')}${p.session_id === state.hostSessionId ? ' <span class="host-badge" title="Anfitrião">host</span>' : ''}${isSelf ? ' (você)' : ''}</span>
             <span class="person-sub ${live ? 'is-live' : ''}">${sub}</span>
           </span>
         </button>
@@ -2144,6 +2457,8 @@ function renderParticipants() {
         <button class="icon-btn person-more" type="button" data-menu="${escapeAttr(id)}" aria-label="Mais opções" aria-haspopup="menu">${ICONS.more}</button>
       </li>`;
   }).join('');
+
+  renderAdminControls();
 }
 
 // ---- Menu "..." -----------------------------------------------------------
@@ -2169,6 +2484,12 @@ function openPersonMenu(sessionId, anchor) {
       ? `<button role="menuitem" data-act="unmute">${ICONS.volume}Ativar áudio</button>`
       : `<button role="menuitem" data-act="mute">${ICONS.volumeOff}Silenciar para mim</button>`);
   }
+    if (state.isHost) {
+      const alvoMudo = flagsOf(sessionId).mic === false;
+      items.push(`<button role="menuitem" data-act="admin-mute">${alvoMudo ? ICONS.mic : ICONS.micOff}${alvoMudo ? 'Deixar falar' : 'Silenciar microfone'}</button>`);
+      items.push(`<button role="menuitem" data-act="admin-camera" ${flags.camera ? '' : 'disabled'}>${ICONS.camera}Desligar câmera</button>`);
+      items.push(`<button role="menuitem" data-act="admin-kick">${ICONS.headphonesOff}Expulsar da sala</button>`);
+    }
   elements.personMenu.innerHTML = items.join('');
   elements.personMenu.hidden = false;
 
@@ -2198,6 +2519,19 @@ function handleMenuClick(e) {
 
   if (act === 'camera' || act === 'screen') {
     selectParticipant(id, { tab: act });
+    return;
+  }
+
+  if (act === 'admin-kick') {
+    sendWebSocketMessage('admin-kick', { target_session_id: id });
+    return;
+  }
+  if (act === 'admin-camera') {
+    sendWebSocketMessage('admin-camera', { target_session_id: id });
+    return;
+  }
+  if (act === 'admin-mute') {
+    sendWebSocketMessage('admin-mute', { target_session_id: id, muted: flagsOf(id).mic !== false });
     return;
   }
 
@@ -2717,3 +3051,6 @@ function escapeAttr(text) {
 
 // Export for debugging
 window.GamingCallsRoom = { state };
+
+// Depuracao (console): estado e dispositivos da sala
+window.__roomDebug = { state, Devices, Storage };

@@ -65,16 +65,21 @@ if (!$room) {
     exit;
 }
 
-if (!$room->canJoin()) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Room is full or expired']);
-    exit;
-}
-
 $sessionId = SessionManager::getId();
 if (!$sessionId) {
     SessionManager::regenerate();
     $sessionId = SessionManager::getId();
+}
+
+// O host entra mesmo com a sala trancada ou cheia
+$isHost = hash_equals($room->creatorSessionId, (string) $sessionId);
+if (!$isHost && !$room->canJoin()) {
+    http_response_code($room->isLocked ? 423 : 403);
+    echo json_encode([
+        'error' => $room->isLocked ? 'Room is locked by the host' : 'Room is full or expired',
+        'locked' => $room->isLocked,
+    ]);
+    exit;
 }
 
 // Store user preferences in session

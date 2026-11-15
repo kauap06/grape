@@ -473,7 +473,7 @@ body {
   grid-template-rows: minmax(0, 1fr);
   gap: 8px;
 }
-.stage.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); }
+.stage.split { grid-template-columns: minmax(0, var(--cam-fr, 1fr)) minmax(90px, 1.5fr); }
 
 .pane {
   position: relative;
@@ -485,6 +485,56 @@ body {
   border: 1px solid var(--line);
 }
 .pane[hidden] { display: none; }
+
+/* Quinas de redimensionar a janela da câmera: uma em cada canto, como
+   numa janela comum. Só a câmera flutuante (aba de tela) é redimensionável.
+   O traço aparece só com o mouse em cima da quina, mas a área de clique é
+   maior e invisível, para não competir com o botão de fechar. */
+.pane.is-floating { overflow: visible; }
+/* o conteúdo acompanha o arredondamento: nada de canto reto aparecendo */
+.pane.is-floating video,
+.pane.is-floating .pane-empty { border-radius: inherit; }
+
+.pane-resize-corner {
+  position: absolute;
+  width: 40px; height: 40px;   /* área de clique generosa */
+  z-index: 20;
+  touch-action: none;
+  pointer-events: auto;
+  opacity: 0;
+}
+.pane-resize-corner::after {
+  content: "";
+  position: absolute;
+  width: 11px; height: 11px;
+  border: 0 solid rgba(255, 255, 255, 0.85);
+  opacity: 0;
+  transition: opacity .15s, border-color .15s;
+}
+/* cada quina desenha o ângulo correspondente, longe do botão de fechar */
+.pane-resize-corner[data-corner="se"] { right: 0; bottom: 0; cursor: nwse-resize; }
+.pane-resize-corner[data-corner="se"]::after { right: 8px; bottom: 8px; border-right-width: 2px; border-bottom-width: 2px; border-bottom-right-radius: 3px; }
+.pane-resize-corner[data-corner="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+.pane-resize-corner[data-corner="nw"]::after { left: 8px; top: 8px; border-left-width: 2px; border-top-width: 2px; border-top-left-radius: 3px; }
+.pane-resize-corner[data-corner="ne"] { right: 0; top: 0; cursor: nesw-resize; }
+.pane-resize-corner[data-corner="ne"]::after { right: 8px; top: 8px; border-right-width: 2px; border-top-width: 2px; border-top-right-radius: 3px; }
+.pane-resize-corner[data-corner="sw"] { left: 0; bottom: 0; cursor: nesw-resize; }
+.pane-resize-corner[data-corner="sw"]::after { left: 8px; bottom: 8px; border-left-width: 2px; border-bottom-width: 2px; border-bottom-left-radius: 3px; }
+
+/* O traço só surge com o mouse sobre a quina */
+.pane.is-floating .pane-resize-corner:hover::after,
+.pane.is-floating .pane-resize-corner:focus-visible::after { opacity: 1; }
+.pane.is-floating .pane-resize-corner:hover::after { border-color: rgba(167, 112, 255, 0.95); }
+
+/* A quina nordeste não invade o botão de fechar */
+.pane.is-floating .pane-resize-corner[data-corner="ne"] {
+  width: 18px; height: 18px;
+  top: -4px; right: -4px;   /* no canto externo, livre do botão de fechar */
+}
+.pane.is-floating .pane-resize-corner[data-corner="ne"]::after { right: 4px; top: 4px; width: 8px; height: 8px; }
+
+.pane-resizing { user-select: none; cursor: inherit; }
+
 .pane video {
   display: block;
   width: 100%;
@@ -892,24 +942,28 @@ body {
   align-items: center;
   justify-content: center;
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 26px;
-  height: 26px;
+  top: 5px;
+  right: 5px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  background: rgba(11, 11, 12, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 40;              /* acima das quinas: o centro do botão é sempre ele */
+  background: rgba(11, 11, 12, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: var(--radius-full);
   color: #fff;
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--transition-fast), background var(--transition-fast);
+  /* garante que o clique chegue no botão mesmo perto da quina */
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 .pane.is-floating:hover .cam-close,
 .pane.is-floating .cam-close:focus-visible { opacity: 1; }
 .pane.is-floating.is-dragging .cam-close { opacity: 0; }
 .cam-close:hover { background: var(--danger); border-color: var(--danger); }
-.cam-close svg { width: 14px; height: 14px; }
+.cam-close svg { width: 15px; height: 15px; pointer-events: none; }
 
 /* Trazer a câmera de volta */
 .cam-restore {
@@ -1351,3 +1405,39 @@ body {
   .view-tab-label { display: none; }
   .stage.is-grid .stage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(150px, 220px); }
 }
+/* Badge de anfitriao (host) na lista de participantes */
+.host-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent-fg);
+  background: var(--color-accent-primary);
+  border-radius: var(--radius-full);
+  vertical-align: 1px;
+}
+body.is-compact .host-badge { border-radius: 4px; letter-spacing: 0; }
+/* Botao "Silenciar todos" (host) no topo da lista */
+.mute-all-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  margin-bottom: 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.mute-all-btn:hover { background: var(--panel-3); color: var(--text); }
+.mute-all-btn svg { width: 15px; height: 15px; }
+body.is-compact .mute-all-btn { border-radius: 8px; }
