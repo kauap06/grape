@@ -47,6 +47,16 @@ class SessionManager
 
             $sameSite = $config['samesite'] ?? 'Lax';
 
+            // Armazenamento próprio do app: isola as sessões e permite ao
+            // reset apagá-las sem tocar no temp do sistema.
+            $savePath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'sessions';
+            if (!is_dir($savePath)) {
+                @mkdir($savePath, 0775, true);
+            }
+            if (is_dir($savePath) && is_writable($savePath)) {
+                session_save_path($savePath);
+            }
+
             // Configurar armazenamento e duração.
             ini_set('session.gc_maxlifetime', (string) $lifetime);
 

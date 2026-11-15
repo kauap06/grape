@@ -52,6 +52,7 @@ function cacheElements() {
   elements.avatarUpload = document.getElementById('avatar-upload');
   elements.customAvatarBtn = document.getElementById('custom-avatar-btn');
   elements.saveProfileBtn = document.getElementById('save-profile-btn');
+  elements.resetDataBtn = document.getElementById('reset-data-btn');
   
   // Preference checkboxes
   elements.autoMute = document.getElementById('auto-mute');
@@ -87,6 +88,7 @@ function setupEventListeners() {
   // Profile form
   elements.displayName.addEventListener('input', debounce(saveDisplayName, 300));
   elements.saveProfileBtn.addEventListener('click', saveProfile);
+  elements.resetDataBtn?.addEventListener('click', resetUserData);
   elements.customAvatarBtn.addEventListener('click', () => elements.avatarUpload.click());
   elements.avatarUpload.addEventListener('change', handleAvatarUpload);
   
@@ -376,6 +378,34 @@ async function createRoom() {
     elements.createRoomBtn.disabled = false;
     elements.createRoomBtn.textContent = 'Criar sala';
   }
+}
+
+/**
+ * Apaga tudo o que foi salvo sobre este navegador: preferências no servidor,
+ * localStorage e cookies. Volta ao estado de primeiro acesso.
+ */
+async function resetUserData() {
+  if (!window.confirm('Apagar todos os seus dados salvos? Perfil, preferências e dispositivos voltam ao padrão.')) return;
+
+  const botao = elements.resetDataBtn;
+  if (botao) botao.disabled = true;
+
+  try {
+    await API.post('/api/reset.php', {});
+  } catch (e) {
+    // Mesmo se o servidor falhar, limpa o lado do navegador
+    Logger.warn('Reset no servidor falhou:', e);
+  }
+
+  Storage.clear();
+
+  // Cookies do app (sessão e chave de preferências)
+  for (const nome of ['gaming_calls_session', 'grape_pref']) {
+    document.cookie = `${nome}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+  }
+
+  Toast.success('Dados apagados. Recarregando...');
+  setTimeout(() => window.location.reload(), 700);
 }
 
 async function joinRoom() {

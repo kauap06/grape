@@ -274,3 +274,25 @@ body.is-compact.page-home .avatar-preview {
   box-shadow: none;
 }
 body.is-compact.page-home .nav-link { border-radius: 8px; }
+
+/* Apagar dados salvos (só no index, dentro das configurações) */
+.section-data h3 { margin-bottom: 6px; }
+.section-data .settings-hint { margin: 0 0 12px; line-height: 1.45; max-width: 46ch; }
+#reset-data-btn { align-self: flex-start; }
+#reset-data-btn:disabled { opacity: .6; cursor: default; }
+body.is-compact.page-home #reset-data-btn { box-shadow: none; border-radius: 8px; }
+
+/* Raio único nos controles do modal: nada de pílula convivendo com canto vivo */
+.modal { border-radius: 12px; }
+.modal .btn,
+.modal .form-select,
+.modal .form-range,
+.modal .modal-close,
+.modal .settings-hint { border-radius: 8px; }
+.modal .form-range { border-radius: 8px; }
+.modal .modal-close { border-radius: 8px; }
+body.is-compact.page-home .modal,
+body.is-compact.page-home .modal .btn,
+body.is-compact.page-home .modal .form-select,
+body.is-compact.page-home .modal .form-range,
+body.is-compact.page-home .modal .modal-close { border-radius: 8px; }

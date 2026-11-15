@@ -221,6 +221,12 @@ $prefsJson = json_encode(
                             <span id="max-bitrate-value">2500 kbps</span>
                         </div>
                     </div>
+
+                    <div class="settings-section section-data">
+                        <h3>Dados</h3>
+                        <p class="settings-hint">Apaga perfil, dados e preferências salvos neste dispositivo. Não dá para desfazer.</p>
+                        <button type="button" class="btn btn-danger" id="reset-data-btn">Apagar meus dados</button>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="settings-cancel">Cancelar</button>

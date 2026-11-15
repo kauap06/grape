@@ -74,6 +74,7 @@ Options -MultiViews
     RewriteRule ^api/rooms/leave/?$ api/rooms/leave.php [END]
     RewriteRule ^api/rooms/status/?$ api/rooms/status.php [END]
     RewriteRule ^api/preferences/?$ api/preferences.php [END]
+RewriteRule ^api/reset/?$ api/reset.php [END]
 
     # Front controller opcional
     # RewriteCond %{REQUEST_FILENAME} !-f

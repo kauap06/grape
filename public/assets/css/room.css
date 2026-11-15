@@ -1471,6 +1471,8 @@ body.is-compact .host-badge { border-radius: 4px; letter-spacing: 0; }
 }
 .mute-all-btn:hover { background: var(--panel-3); color: var(--text); }
 .mute-all-btn svg { width: 15px; height: 15px; }
+/* o display flex anularia o atributo hidden: reafirma o esconderijo */
+.mute-all-btn[hidden] { display: none; }
 body.is-compact .mute-all-btn { border-radius: 8px; }
 
 

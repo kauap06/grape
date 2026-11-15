@@ -336,9 +336,17 @@ a:hover { color: #fff; }
   width: 100%;
   max-width: 480px;
   max-height: 90vh;
-  overflow-y: auto;
+  /* Rola por dentro do corpo: a barra fica longe do canto arredondado */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   transform: translateY(8px);
   transition: transform var(--transition-normal);
+}
+.modal-body {
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 .modal-overlay.active .modal {
   transform: none;

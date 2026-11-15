@@ -933,6 +933,8 @@ function handleJoined(payload) {
   state.maxParticipants = payload.room.max_participants;
   state.hostSessionId = payload.creator_session_id || '';
   state.isHost = payload.is_host === true;
+  // Quem entra também ouve o próprio aviso de entrada
+  playNotificationSound('join.mp3');
   state.isLocked = payload.is_locked === true;
   document.body.classList.toggle('is-host', state.isHost);
   renderAdminControls();
@@ -2658,8 +2660,8 @@ function notifyRoom(message, duration, options) {
 
 // Sons das notificações (carregados sob demanda, um Audio por arquivo)
 const notificationSounds = {};
-// Volume dos avisos: reduzido em degraus (0.8 e depois mais 15%)
-const SOUND_VOLUME = 0.68;
+// Volume dos avisos: reduzido em degraus (0.8, mais 15%, mais 15%)
+const SOUND_VOLUME = 0.35;
 function playNotificationSound(file = 'message.mp3') {
   if (notificationsMuted) return;
   try {
