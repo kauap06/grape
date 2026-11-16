@@ -87,6 +87,17 @@ function cacheElements() {
   elements.videoQuality = document.getElementById('video-quality');
   elements.maxBitrate = document.getElementById('max-bitrate');
   elements.maxBitrateValue = document.getElementById('max-bitrate-value');
+
+  // Certificado HTTPS
+  elements.caStatus = document.getElementById('ca-status');
+  elements.caTitle = document.getElementById('ca-title');
+  elements.caDetail = document.getElementById('ca-detail');
+  elements.caHint = document.getElementById('ca-hint');
+  elements.caPaths = document.getElementById('ca-paths');
+  elements.caCertPath = document.getElementById('ca-cert-path');
+  elements.caInstallerRow = document.getElementById('ca-installer-row');
+  elements.caInstallerPath = document.getElementById('ca-installer-path');
+  elements.caCheckBtn = document.getElementById('ca-check-btn');
 }
 
 function setupEventListeners() {
@@ -122,7 +133,11 @@ function setupEventListeners() {
   }
   
   // Settings modal
-  elements.settingsBtn.addEventListener('click', () => Modal.open('settings-modal'));
+  elements.settingsBtn.addEventListener('click', () => {
+    Modal.open('settings-modal');
+    refreshCaStatus();
+  });
+  elements.caCheckBtn?.addEventListener('click', refreshCaStatus);
   elements.settingsClose.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsCancel.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsSave.addEventListener('click', saveSettings);
@@ -357,6 +372,68 @@ async function testMediaDevices() {
     Toast.warning(`Microfone funcionando. ${mensagem(erroCamera, true)}`);
   } else {
     Toast.error(`${mensagem(erroCamera, true)}. ${mensagem(erroMic, false)}`);
+  }
+}
+
+// ---- Certificado HTTPS ------------------------------------------------
+// O Caddy usa uma CA própria ("tls internal"). Sem ela instalada o navegador
+// avisa e bloqueia câmera/microfone. O endpoint devolve o caminho do .crt
+// neste PC e se ele já está na loja de raízes confiáveis do Windows.
+function renderCaStatus(data) {
+  if (!elements.caStatus) return;
+
+  const set = (state, title, detail, hint) => {
+    elements.caStatus.dataset.state = state;
+    elements.caTitle.textContent = title;
+    elements.caDetail.textContent = detail || '';
+    elements.caHint.textContent = hint || '';
+    elements.caHint.hidden = !hint;
+  };
+
+  if (!data) {
+    set('error', 'Não foi possível verificar', 'O servidor não respondeu');
+    elements.caPaths.hidden = true;
+    return;
+  }
+
+  if (!data.certPath) {
+    set('error', 'Certificado não encontrado', 'Nenhum arquivo da CA neste PC',
+      'Inicie o Grape pelo host (bin\\start-host.bat) para gerar o certificado e depois rode o instalador deploy\\ca\\install-ca.bat.');
+  } else if (data.installed === true && data.expired) {
+    set('warn', 'Instalado, mas vencido', 'O navegador pode voltar a avisar',
+      'Rode deploy\\ca\\renew-cert.bat e instale o certificado de novo.');
+  } else if (data.installed === true) {
+    const lojas = data.stores?.length ? ` (${data.stores.join(' e ')})` : '';
+    set('ok', 'Instalado', `Raiz confiável neste PC${lojas}`);
+  } else if (data.installed === false) {
+    set('warn', 'Não instalado', 'Verificado neste PC',
+      'Rode o instalador abaixo neste PC para o navegador confiar no certificado e abrir o Grape por HTTPS sem aviso.');
+  } else {
+    set('warn', 'Não foi possível verificar', data.platform === 'Windows' ? 'Verificação indisponível' : 'Disponível só no Windows');
+  }
+
+  elements.caPaths.hidden = !data.certPath;
+  if (data.certPath) {
+    elements.caCertPath.textContent = data.certPath;
+    elements.caInstallerRow.hidden = !data.installerPath;
+    elements.caInstallerPath.textContent = data.installerPath || '';
+  }
+}
+
+async function refreshCaStatus() {
+  if (!elements.caStatus) return;
+  if (elements.caCheckBtn) elements.caCheckBtn.disabled = true;
+  elements.caStatus.dataset.state = 'checking';
+  elements.caTitle.textContent = 'Verificando…';
+  elements.caDetail.textContent = '';
+  elements.caHint.hidden = true;
+  try {
+    renderCaStatus(await API.get('/api/ca-status.php'));
+  } catch (e) {
+    Logger.warn('CA status failed:', e);
+    renderCaStatus(null);
+  } finally {
+    if (elements.caCheckBtn) elements.caCheckBtn.disabled = false;
   }
 }
 

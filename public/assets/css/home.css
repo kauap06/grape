@@ -297,6 +297,21 @@ body.is-compact.page-home .nav-link { border-radius: 8px; }
 #reset-data-btn:disabled { opacity: .6; cursor: default; }
 body.is-compact.page-home #reset-data-btn { box-shadow: none; border-radius: 8px; }
 
+/* Certificado HTTPS (só no index, dentro das configurações) */
+.ca-status { display: flex; align-items: center; gap: 10px; }
+.ca-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); flex: none; }
+.ca-status[data-state="ok"] .ca-dot { background: var(--color-online); }
+.ca-status[data-state="warn"] .ca-dot { background: var(--color-accent-warning); }
+.ca-status[data-state="error"] .ca-dot { background: var(--color-accent-danger); }
+.ca-status-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ca-status-text strong { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+.ca-status-text small { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.ca-check { flex: none; min-height: 34px; padding: 0 12px; font-size: var(--font-size-xs); }
+.ca-paths { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ca-paths > div { display: flex; flex-direction: column; gap: 2px; }
+.ca-paths span { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.ca-paths code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; line-height: 1.45; color: var(--color-text-primary); overflow-wrap: anywhere; }
+
 /* Raio único nos controles do modal: nada de pílula convivendo com canto vivo */
 .modal { border-radius: 12px; }
 .modal .btn,

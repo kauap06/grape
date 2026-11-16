@@ -222,6 +222,29 @@ $prefsJson = json_encode(
                         </div>
                     </div>
 
+                    <div class="settings-section">
+                        <h3>Certificado HTTPS</h3>
+                        <div class="ca-status" id="ca-status" data-state="checking">
+                            <span class="ca-dot" aria-hidden="true"></span>
+                            <div class="ca-status-text">
+                                <strong id="ca-title">Verificando…</strong>
+                                <small id="ca-detail"></small>
+                            </div>
+                            <button type="button" class="btn btn-secondary ca-check" id="ca-check-btn">Verificar</button>
+                        </div>
+                        <p class="settings-hint" id="ca-hint" hidden></p>
+                        <div class="ca-paths" id="ca-paths" hidden>
+                            <div>
+                                <span>Certificado</span>
+                                <code id="ca-cert-path"></code>
+                            </div>
+                            <div id="ca-installer-row" hidden>
+                                <span>Instalador</span>
+                                <code id="ca-installer-path"></code>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="settings-section section-data">
                         <h3>Dados</h3>
                         <p class="settings-hint">Apaga perfil, preferências e dispositivos salvos neste navegador. Não dá para desfazer.</p>
