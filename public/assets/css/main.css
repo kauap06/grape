@@ -279,6 +279,7 @@ a:hover { color: #fff; }
 .preference-item input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  border-radius: 3px;
   accent-color: #ededee;
   cursor: pointer;
 }

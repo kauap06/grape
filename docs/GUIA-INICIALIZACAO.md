@@ -21,7 +21,7 @@ O script, sozinho:
 
 1. usa o PHP/MariaDB/Caddy/Composer de `portable\` (nada instalado no Windows);
 2. inicializa o banco na primeira execução e aplica migrações;
-3. sobe MariaDB (3306), HTTP PHP (8080), WebSocket (8081) e Caddy (443);
+3. sobe MariaDB (33070), HTTP PHP (8181), WebSocket (8182) e Caddy (8443);
 4. confia na CA do Caddy neste PC (sem administrador);
 5. gera `deploy\ca\dist\install-ca.bat` para os convidados;
 6. mostra o link da sala e o IP do Radmin.
@@ -29,7 +29,7 @@ O script, sozinho:
 Depois abra no host:
 
 ```
-https://localhost
+https://localhost:8443
 ```
 
 ---
@@ -51,15 +51,15 @@ Detalhes completos do certificado: [`docs/CERTIFICADOS.md`](CERTIFICADOS.md).
 
 | Porta | Serviço | Para quê |
 |---|---|---|
-| 3306 | MariaDB portátil | salas e participantes |
-| 8080 | PHP (servidor embutido) | páginas e API REST |
-| 8081 | WebSocket (Ratchet) | sinalização WebRTC e chat |
-| 443 | Caddy | HTTPS + proxy de `/ws` |
+| 33070 | MariaDB portátil | salas e participantes |
+| 8181 | PHP (servidor embutido) | páginas e API REST |
+| 8182 | WebSocket (Ratchet) | sinalização WebRTC e chat |
+| 8443 | Caddy | HTTPS + proxy de `/ws` |
 
-- Host local: `http` em `8080`, `https` em `443`.
+- Host local: `http` em `8181`, `https` em `8443`.
 - Convidados: **usem o link `https`** (câmera/microfone/tela só funcionam em
   HTTPS).
-- Firewall do host: liberar TCP **443** (e 8080/8081 se usar o link HTTP).
+- Firewall do host: liberar TCP **8443** (e 8181/8182 se usar o link HTTP).
 
 ---
 
@@ -84,7 +84,7 @@ Fora do projeto: Radmin VPN, navegador com WebRTC e o runtime do Visual C++
 REM Subir tudo (host)
 bin\start-host.bat
 
-REM Desenvolvimento (HTTP 8000 / WS 8081, sem Caddy)
+REM Desenvolvimento (HTTP 8000 / WS 8182, sem Caddy)
 bin\start-dev.bat
 
 REM Logs
@@ -107,8 +107,8 @@ deploy\ca\remove-ca.bat           REM desfaz a confiança
 deploy/ca/test-https.bat <IP>       REM diagnostico: este PC confia no certificado?
 ```
 
-Para parar: feche as janelas `Grape MariaDB (3306)`, `Grape HTTP (8080)`,
-`Grape WebSocket (8081)` e `Grape HTTPS (Caddy)` — ou:
+Para parar: feche as janelas `Grape MariaDB (33070)`, `Grape HTTP (8181)`,
+`Grape WebSocket (8182)` e `Grape HTTPS (Caddy)` — ou:
 
 ```bat
 taskkill /F /IM php.exe & taskkill /F /IM caddy.exe & taskkill /F /IM mysqld.exe
@@ -119,8 +119,8 @@ taskkill /F /IM php.exe & taskkill /F /IM caddy.exe & taskkill /F /IM mysqld.exe
 ## 6. Checklist da primeira execução
 
 - [ ] `bin\start-host.bat` rodou sem erro (nenhum "ERROR:" no console).
-- [ ] Portas 3306/8080/8081/443 escutando.
-- [ ] `https://localhost` abre **sem** aviso de certificado.
+- [ ] Portas 33070/8181/8182/8443 escutando.
+- [ ] `https://localhost:8443` abre **sem** aviso de certificado.
 - [ ] `deploy\ca\dist\install-ca.bat` existe (envie aos convidados).
 - [ ] Convidado rodou o `.bat` e fechou/reabriu o navegador.
 - [ ] Sala criada, convidado entrou e o cronômetro anda (sem "Reconectando").
@@ -137,7 +137,7 @@ a correção aplicada.
 | Sintoma | Causa | Correção |
 |---|---|---|
 | `start-host.bat` fechava na hora | `exit /b 1` sem `pause` nos erros | todos os caminhos de erro dão `pause` |
-| "Porta 8080/8081 em uso" mesmo sem nada rodando | `netstat \| findstr ":8081 "` casava conexões remotas e `TIME_WAIT` | filtro passou a exigir `LISTENING` |
+| "Porta 8181/8182 em uso" mesmo sem nada rodando | `netstat \| findstr ":8182 "` casava conexões remotas e `TIME_WAIT` | filtro passou a exigir `LISTENING` |
 | Script travava/errava ao ser chamado por outro script | `timeout /t` falha com stdin redirecionado | trocado por `ping -n` |
 | Dependia de PHP/MySQL instalados | — | binários portáteis em `portable\`, com fallback para PATH |
 
@@ -158,7 +158,7 @@ a correção aplicada.
 
 | Sintoma | Causa | Correção |
 |---|---|---|
-| Sala ficava em "Reconectando..." para sempre | cliente tinha **um** endereço fixo e desistia em silêncio | lista de candidatos (`wss://host/ws` ⇄ `ws://host:8081`), reaproveita o que funcionou, segue tentando e mostra `Reconectando... (n)` |
+| Sala ficava em "Reconectando..." para sempre | cliente tinha **um** endereço fixo e desistia em silêncio | lista de candidatos (`wss://host/ws` ⇄ `ws://host:8182`), reaproveita o que funcionou, segue tentando e mostra `Reconectando... (n)` |
 | WebSocket fechava ao entrar com foto de perfil | Ratchet limita mensagem a **1 MB**; foto de 2 MB → ~2,7 MB | avatar reduzido para 256 px JPEG no navegador (e reenvio via `profile-update`) |
 | `PDOException ... 1406 Data too long for column 'avatar_data'` | coluna era `TEXT` (64 KB) | `MEDIUMTEXT` + migração automática + cliente reduz avatar antigo ao abrir a sala |
 | `join` falhava e nada aparecia | erro do banco abortava o `handleJoin` | avatar acima de 8 MB é descartado em vez de derrubar a entrada |
@@ -264,5 +264,5 @@ logs/*.log                             # logs dos serviços
 - **Signaling ≠ mídia**: áudio/vídeo vão direto entre os PCs (P2P). Se não
   conectarem, o problema é NAT/rede, não o WebSocket — configure TURN em
   `config/config.php` se necessário.
-- **Não exponha** 8080/8081 na internet: o foco é Radmin VPN.
+- **Não exponha** 8181/8182 na internet: o foco é Radmin VPN.
 - **Chat não é persistido** no banco.

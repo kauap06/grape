@@ -92,7 +92,7 @@ class OriginCheckMiddleware implements HttpServerInterface
      *  2. mesma origem: host do Origin == host do cabecalho Host.
      *
      * Compara-se apenas o hostname (ignora porta): em desenvolvimento a pagina
-     * roda em http://host:8080 e o WebSocket em ws://host:8081. O hostname ainda
+     * roda em http://host:8181 e o WebSocket em ws://host:8182. O hostname ainda
      * distingue atacante de endpoint valido, pois o navegador deriva ambos
      * (Origin e Host) da URL real da conexao.
      */
@@ -124,7 +124,7 @@ class OriginCheckMiddleware implements HttpServerInterface
         }
 
         // localhost, 127.0.0.1 e ::1 sao a mesma maquina: a pagina pode estar em
-        // http://localhost:8080 e o WS em ws://127.0.0.1:8081 (dev local).
+        // http://localhost:8181 e o WS em ws://127.0.0.1:8182 (dev local).
         $loopback = ['localhost', '127.0.0.1', '::1', '[::1]'];
         return in_array(strtolower($originHost), $loopback, true)
             && in_array(strtolower($hostHeaderHost), $loopback, true);

@@ -13,7 +13,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 echo.
 echo Verificando portas...
 set "LIVRES=1"
-for %%P in (3306 8080 8081 443) do (
+for %%P in (33070 8181 8182 8443) do (
     netstat -ano -p tcp | findstr /r /c:":%%P .*LISTENING" >nul 2>&1
     if errorlevel 1 (
         echo   porta %%P: livre
@@ -28,7 +28,7 @@ if "!LIVRES!"=="1" (
     echo Tudo parado.
 ) else (
     echo Atencao: alguma porta continua ocupada.
-    echo Se for a 443, verifique o Apache do XAMPP Control Panel.
+    echo Se for a 8443, verifique o Apache do XAMPP Control Panel.
 )
 echo.
 pause

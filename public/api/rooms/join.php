@@ -96,7 +96,7 @@ try {
         'success' => true,
         'room' => $room->toArray(),
         'participant' => $participant->toPublicArray(),
-        'websocket_url' => Url::websocket((int) Config::get('websocket.port', 8081)), // WebSocket server URL
+        'websocket_url' => Url::websocket((int) Config::get('websocket.port', 8182)), // WebSocket server URL
     ]);
 } catch (\Throwable $e) {
     error_log('Join room error: ' . $e->getMessage());

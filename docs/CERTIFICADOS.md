@@ -33,14 +33,14 @@ x64").
 
 ## 2. Como o HTTPS é montado
 
-O `deploy/Caddyfile` escuta em `https://<IP do Radmin>` e `https://localhost`
+O `deploy/Caddyfile` escuta em `https://<IP do Radmin>:8443` e `https://localhost:8443`
 e repassa tudo para o PHP/WebSocket:
 
 ```
-https://<IP>, https://localhost {
+https://<IP>:8443, https://localhost:8443 {
     tls internal
-    handle /ws* { reverse_proxy 127.0.0.1:8081 }   # WebSocket
-    handle      { reverse_proxy 127.0.0.1:8080 }   # PHP
+    handle /ws* { reverse_proxy 127.0.0.1:8182 }   # WebSocket
+    handle      { reverse_proxy 127.0.0.1:8181 }   # PHP
 }
 ```
 
@@ -54,7 +54,7 @@ https://<IP>, https://localhost {
 - Sem confiar nessa CA, o navegador mostra aviso de certificado e, em vários
   casos, **recusa o WebSocket** (`wss://`) — a sala fica em "Reconectando...".
 - Como a página é HTTPS, o WebSocket também é `wss://` na mesma origem (`/ws`),
-  o que evita depender da porta `8081` liberada no firewall.
+  o que evita depender da porta `8182` liberada no firewall.
 
 > Existe também uma CA própria opcional em `deploy/ca` (`generate-root-ca.bat`,
 > `issue-cert.bat`). Ela é um complemento: só passa a valer se o `tls internal`
@@ -162,7 +162,7 @@ certificado.
 | `ERRO: nenhuma CA encontrada` | o host nunca rodou o Caddy | rode `bin\start-host.bat` uma vez e depois o `install-ca.bat` |
 | Navegador ainda avisa / fica em "Reconectando..." | certificado não confiável naquele PC | rode o `install-ca.bat` e **feche/reabra** o navegador |
 | `remove-ca.bat` diz "nenhum certificado encontrado" mas o aviso continua | o certificado foi instalado para o computador inteiro | remova em `certlm.msc` (loja LocalMachine) |
-| Convidado não abre nada | firewall do host | libere TCP **443** (e 8080/8081 se usar o link HTTP) |
+| Convidado não abre nada | firewall do host | libere TCP **8443** (e 8181/8182 se usar o link HTTP) |
 | O aviso voltou depois de dias | a CA do Caddy foi recriada (por exemplo, `%APPDATA%\Caddy` apagado) | rode `bin/start-host.bat` e reenvie o novo `install-ca.bat` |
 | Convidado: "site não é seguro" e câmera/micro bloqueados | CA não instalada, navegador não reiniciado, link HTTP ou **Firefox** | rode `deploy\ca\test-https.bat` no PC dele (ver seção 7.1) |
 
@@ -189,7 +189,7 @@ Como interpretar:
 | `usuario atual: OK` + `Conexao HTTPS: FALHOU` | a CA do host mudou (Caddy recriado) → peça o `install-ca.bat` novo; ou o IP mudou |
 | `usuario atual: OK` + `OK - HTTP 200` | o PC está certo: **feche todas as janelas do navegador** e abra de novo |
 | navegador padrão = **Firefox** | o Firefox usa a loja **dele**, não a do Windows: use Chrome/Edge, ou importe em `Firefox > Configurações > Privacidade e Segurança > Certificados > Ver Certificados > Autoridades > Importar` |
-| abre `http://IP:8080` em vez de `https://IP` | o link HTTP nunca é "seguro": câmera/micro/tela só funcionam no link `https://` |
+| abre `http://IP:8181` em vez de `https://IP:8443` | o link HTTP nunca é "seguro": câmera/micro/tela só funcionam no link `https://` |
 
 Checklist rápido para o convidado:
 
@@ -204,7 +204,7 @@ Checklist rápido para o convidado:
 
 ```
 bin/start-host.bat                     # confia na CA e gera o instalador de convidado
-deploy/Caddyfile                       # HTTPS em 443 + proxy /ws
+deploy/Caddyfile                       # HTTPS em 8443 + proxy /ws
 deploy/ca/install-ca.bat               # instala a CA (host) / um .crt (convidado)
 deploy/ca/remove-ca.bat                # desfaz a confianca (remove por thumbprint)
 deploy/ca/test-https.bat               # diagnostico no PC do convidado

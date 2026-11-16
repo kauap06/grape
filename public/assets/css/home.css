@@ -141,24 +141,21 @@
 .page-home .preference-item input[type="checkbox"] {
   appearance: none; -webkit-appearance: none;
   width: 16px; height: 16px; flex-shrink: 0; margin: 0;
-  border-radius: var(--radius-full);
-  border: 1.5px solid rgba(190, 150, 255, 0.45);
+  border: none;
+  border-radius: 3px;
   background-color: rgba(8, 4, 22, 0.65);
   background-image: radial-gradient(circle, var(--color-accent-fg) 0 2.5px, transparent 3px);
   background-size: 100% 100%; background-position: center; background-repeat: no-repeat;
   cursor: pointer;
   transition: background-color var(--transition-fast), background-size var(--transition-fast),
-              border-color var(--transition-fast), box-shadow var(--transition-fast),
-              transform var(--transition-fast);
+              box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 .page-home .preference-item input[type="checkbox"]:hover {
-  border-color: rgba(255, 255, 255, 0.45);
   transform: scale(1.08);
 }
 .page-home .preference-item input[type="checkbox"]:checked {
   background-color: var(--color-accent-primary);
-  border-color: var(--color-accent-primary);
-  box-shadow: 0 0 0 3px rgba(200, 150, 255, 0.35);
+  box-shadow: none;
 }
 .page-home .preference-item input[type="checkbox"]:not(:checked) { background-size: 0 0; }
 .page-home .preference-item input[type="checkbox"]:active { transform: scale(0.92); }
@@ -220,6 +217,7 @@
 /* ==========================================================================
    Modo compacto: resquícios do tema padrão na home.
    Fica no fim para vencer por ordem as regras do visual normal.
+   A cor de "marcado" vem de --switch-on (definida em theme.css).
    ========================================================================== */
 body.is-compact.page-home .section-title,
 body.is-compact #profile-title,
@@ -227,13 +225,13 @@ body.is-compact #room-title { color: var(--color-text-muted); }
 
 /* Marcadores redondos: sem anel colorido, sem preenchimento em gradiente */
 body.is-compact.page-home .preference-item input[type="checkbox"] {
-  border-color: var(--min-line);
+  border: 1px solid var(--min-line);
   background: transparent;
   box-shadow: none;
 }
 body.is-compact.page-home .preference-item input[type="checkbox"]:checked {
   background: var(--min-line);
-  border-color: var(--line-strong);
+  border: none;
   box-shadow: none;
 }
 body.is-compact.page-home .preference-item input[type="checkbox"]:checked::after {
@@ -259,13 +257,13 @@ body.is-compact.page-home .switch-label small { color: var(--text-3); }
 /* Botões principais e divisor sem cor de marca */
 body.is-compact.page-home .btn-primary {
   background: var(--min-line);
-  color: var(--text);
+  color: var(--text, #e8e5ef);
   box-shadow: none;
 }
-body.is-compact.page-home .btn-primary:hover:not(:disabled) { background: var(--line-strong); }
+body.is-compact.page-home .btn-primary:hover:not(:disabled) { background: #3a3547; }
 body.is-compact.page-home .divider::before,
 body.is-compact.page-home .divider::after { background: var(--min-line); }
-body.is-compact.page-home .divider span { color: var(--text-3); }
+body.is-compact.page-home .divider span { color: var(--text-3, #7c7789); }
 
 /* Avatar de prévia sem anel */
 body.is-compact.page-home .avatar-preview {

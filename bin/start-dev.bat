@@ -47,14 +47,14 @@ if not exist "%PROJECT_DIR%vendor\autoload.php" (
 
 if not exist logs mkdir logs
 
-start "Grape Dev WebSocket (8081)" /B "%PHP_EXE%" server/websocket-server.php > logs\websocket.log 2>&1
+start "Grape Dev WebSocket (8182)" /B "%PHP_EXE%" server/websocket-server.php > logs\websocket.log 2>&1
 timeout /t 2 /nobreak >nul
 start "Grape Dev HTTP (8000)" /B "%PHP_EXE%" -S 127.0.0.1:8000 -t public > logs\http.log 2>&1
 
 echo.
 echo Grape em modo desenvolvimento.
 echo   Site:      http://localhost:8000
-echo   WebSocket: ws://localhost:8081
+echo   WebSocket: ws://localhost:8182
 echo   Logs:      logs\http.log e logs\websocket.log
 echo Para parar: feche as janelas ou rode taskkill /F /IM php.exe
 echo.

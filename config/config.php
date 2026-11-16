@@ -13,14 +13,14 @@ return [
         //   set APP_DEBUG=1   (antes de iniciar o servidor)
         'debug' => (bool) getenv('APP_DEBUG'),
         'timezone' => 'America/Sao_Paulo',
-        'base_url' => 'http://localhost:8080', // Adjust for your environment
+        'base_url' => 'http://localhost:8181', // Adjust for your environment
     ],
 
     // Database settings
     'database' => [
         'driver' => 'mysql',
         'host' => '127.0.0.1',
-        'port' => 3306,
+        'port' => 33070,
         'database' => 'grape_calls',
         // Credenciais reais ficam em config/local.php (nao versionado)
         // ou em DATABASE_USERNAME / DATABASE_PASSWORD.
@@ -52,9 +52,9 @@ return [
 
     // WebSocket server settings
     'websocket' => [
-        // Loopback: o unico ponto exposto e o Caddy em 443 (/ws -> 8081)
+        // Loopback: o unico ponto exposto e o Caddy em 8443 (/ws -> 8182)
         'host' => getenv('WEBSOCKET_HOST') ?: '127.0.0.1',
-        'port' => 8081,
+        'port' => 8182,
         'ping_interval' => 25000, // ms
         'ping_timeout' => 10000,  // ms
         'max_message_size' => 10485760, // 10MB (permite fotos de perfil em base64)

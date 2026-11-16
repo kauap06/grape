@@ -24,7 +24,7 @@ $avatar = SessionManager::getAvatar() ?? '';
 $csrfToken = SessionManager::getCsrfToken();
 $cspNonce = Security::nonce();
 $baseUrl = Url::basePath();
-$wsUrl = Url::websocket((int) Config::get('websocket.port', 8081));
+$wsUrl = Url::websocket((int) Config::get('websocket.port', 8182));
 
 // Preferencias salvas no banco para este navegador (fallback do localStorage)
 Preferences::key();

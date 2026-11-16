@@ -55,7 +55,7 @@ REM ---- Limpeza de portas ----
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$alvo = Get-CimInstance Win32_Process -Filter \"Name='php.exe' or Name='caddy.exe' or Name='mysqld.exe'\" | Where-Object { $_.ExecutablePath -like '*grape*portable*' -or $_.CommandLine -like '*websocket-server.php*' -or $_.CommandLine -like '*deploy*Caddyfile*' }; foreach ($proc in $alvo) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop; Write-Host ('  [limpo] processo ' + $proc.ProcessId + ' encerrado') } catch {} }"
 ping -n 3 -w 1000 127.0.0.1 >nul 2>&1
 
-for %%P in (8080 8081 443) do (
+for %%P in (8181 8182 8443) do (
     netstat -ano -p tcp | findstr /r /c:":%%P .*LISTENING" >nul 2>&1
     if not errorlevel 1 (
         for /f "tokens=5" %%A in ('netstat -ano -p tcp ^| findstr /r /c:":%%P .*LISTENING"') do (
@@ -70,7 +70,7 @@ for %%P in (8080 8081 443) do (
 
 REM ---- MariaDB ----
 set MYSQL_ALREADY_RUNNING=0
-netstat -ano -p tcp | findstr /C:":3306 " | findstr /C:"LISTENING" >nul
+netstat -ano -p tcp | findstr /C:":33070 " | findstr /C:"LISTENING" >nul
 if not errorlevel 1 set MYSQL_ALREADY_RUNNING=1
 
 set MYSQLD_EXE=
@@ -80,7 +80,7 @@ set MYSQLD_PORTABLE=0
 if defined MYSQLD_EXE if "%MYSQLD_EXE%" == "%PROJECT_DIR%\portable\mariadb\bin\mysqld.exe" set MYSQLD_PORTABLE=1
 
 if %MYSQL_ALREADY_RUNNING% EQU 1 (
-    echo MariaDB: ja esta rodando na porta 3306.
+    echo MariaDB: ja esta rodando na porta 33070.
 ) else (
     if not defined MYSQLD_EXE (
         echo [ERRO] mysqld nao encontrado.
@@ -91,11 +91,11 @@ if %MYSQL_ALREADY_RUNNING% EQU 1 (
         echo Preparando banco de dados...
         "%PROJECT_DIR%\portable\mariadb\bin\mariadb-install-db.exe" --datadir="%PROJECT_DIR%\portable\mariadb\data" --default-user >nul 2>&1
     )
-    start "Grape MariaDB (3306)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" --datadir="%PROJECT_DIR%\portable\mariadb\data" --bind-address=127.0.0.1 --local-infile=0 --console > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
+    start "Grape MariaDB (33070)" /D "%PROJECT_DIR%" cmd /c ""%MYSQLD_EXE%" --datadir="%PROJECT_DIR%\portable\mariadb\data" --port=33070 --bind-address=127.0.0.1 --local-infile=0 --console > "%PROJECT_DIR%\logs\mysql.log" 2>&1"
     set MYSQL_STARTED=0
     for /l %%n in (1,1,15) do (
         if !MYSQL_STARTED! EQU 0 (
-            netstat -ano -p tcp | findstr /C:":3306 " | findstr /C:"LISTENING" >nul
+            netstat -ano -p tcp | findstr /C:":33070 " | findstr /C:"LISTENING" >nul
             if not errorlevel 1 (
                 set MYSQL_STARTED=1
             ) else (
@@ -104,7 +104,7 @@ if %MYSQL_ALREADY_RUNNING% EQU 1 (
         )
     )
     if !MYSQL_STARTED! EQU 0 (
-        echo [ERRO] MariaDB nao respondeu na porta 3306. Veja logs\mysql.log
+        echo [ERRO] MariaDB nao respondeu na porta 33070. Veja logs\mysql.log
         pause
         exit /b 1
     )
@@ -131,12 +131,12 @@ if not defined RADMIN_IP (
 )
 
 REM ---- Servicos ----
-start "Grape HTTP (8080)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" -S 127.0.0.1:8080 -t public > "%PROJECT_DIR%\logs\http.log" 2>&1"
-start "Grape WebSocket (8081)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" server/websocket-server.php > "%PROJECT_DIR%\logs\websocket.log" 2>&1"
+start "Grape HTTP (8181)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" -S 127.0.0.1:8181 -t public > "%PROJECT_DIR%\logs\http.log" 2>&1"
+start "Grape WebSocket (8182)" /D "%PROJECT_DIR%" cmd /c ""%PHP_EXE%" server/websocket-server.php > "%PROJECT_DIR%\logs\websocket.log" 2>&1"
 
 tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
 if not errorlevel 1 (
-    echo AVISO: Apache do XAMPP pode ocupar a porta 443/80.
+    echo AVISO: Apache do XAMPP pode ocupar a porta 8443/80.
 )
 
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
@@ -162,14 +162,14 @@ if exist "%PROJECT_DIR%\deploy\ca\make-guest-installer.bat" call "%PROJECT_DIR%\
 
 REM Aquece o opcache
 if exist "%SystemRoot%\System32\curl.exe" (
-    curl.exe -s -k -o NUL --max-time 8 https://localhost/ >nul 2>&1
-    curl.exe -s -k -o NUL --max-time 8 https://localhost/ >nul 2>&1
+    curl.exe -s -k -o NUL --max-time 8 https://localhost:8443/ >nul 2>&1
+    curl.exe -s -k -o NUL --max-time 8 https://localhost:8443/ >nul 2>&1
 )
 
 echo.
 echo Grape iniciado.
-echo   Neste PC:   https://localhost
-echo   Convidados: https://%RADMIN_IP%
+echo   Neste PC:   https://localhost:8443
+echo   Convidados: https://%RADMIN_IP%:8443
 echo   Certificado: deploy\ca\dist\install-ca.bat
 echo   Logs: %PROJECT_DIR%\logs
 echo.

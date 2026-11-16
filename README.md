@@ -38,13 +38,13 @@ bin\start-host.bat
 That single command:
 
 1. uses the bundled toolchain in `portable\` (no installation anywhere);
-2. starts MariaDB `3306`, the PHP HTTP server `8080`, the WebSocket server `8081` and Caddy `443`;
+2. starts MariaDB `33070`, the PHP HTTP server `8181`, the WebSocket server `8182` and Caddy `8443`;
 3. initializes the bundled database on first run and applies migrations (`database\migrate.php`);
 4. trusts the local HTTPS certificate on this PC (current user, no administrator);
 5. generates `deploy\ca\dist\install-ca.bat` for the guests;
 6. prints the invite link and how to find the Radmin VPN IPv4 address.
 
-Then open **`https://localhost`** on the host.
+Then open **`https://localhost:8443`** on the host.
 
 Stop everything with:
 
@@ -96,14 +96,14 @@ Still external, by nature:
 
 | Port | Service | Purpose |
 |---|---|---|
-| 3306 | MariaDB | rooms and participants |
-| 8080 | PHP built-in server | pages and REST API |
-| 8081 | WebSocket (Ratchet) | WebRTC signaling and chat |
-| 443 | Caddy | HTTPS + `/ws` reverse proxy |
+| 33070 | MariaDB | rooms and participants |
+| 8181 | PHP built-in server | pages and REST API |
+| 8182 | WebSocket (Ratchet) | WebRTC signaling and chat |
+| 8443 | Caddy | HTTPS + `/ws` reverse proxy |
 
-- Host: `https://localhost` (or `http://localhost:8080` without HTTPS).
-- Guests: **always the `https://<HOST_VPN_IP>` link** — the HTTP link on `:8080` is not a secure origin and blocks camera/mic/screen.
-- Windows Firewall on the host: allow TCP **443** (and `8080`/`8081` if anyone uses the HTTP link).
+- Host: `https://localhost:8443` (or `http://localhost:8181` without HTTPS).
+- Guests: **always the `https://<HOST_VPN_IP>:8443` link** — the HTTP link on `:8181` is not a secure origin and blocks camera/mic/screen.
+- Windows Firewall on the host: allow TCP **8443** (and `8181`/`8182` if anyone uses the HTTP link).
 
 Find the host's Radmin VPN IPv4 address with `ipconfig` (look for the Radmin VPN virtual adapter). See [`docs/LOCAL_HOSTING.md`](docs/LOCAL_HOSTING.md) for firewall rules.
 
@@ -113,8 +113,8 @@ Find the host's Radmin VPN IPv4 address with `ipconfig` (look for the Radmin VPN
 
 Runtime settings live in `config/config.php`, overridable per machine in `config/local.php` (not versioned). Defaults:
 
-- database `grape_calls` on `127.0.0.1:3306`, user `grape` — no password is shipped; set it in `config/local.php` (copy `config/local.php.example`);
-- PHP HTTP server `127.0.0.1:8080`, WebSocket `127.0.0.1:8081` — reachable only through the Caddy proxy on 443;
+- database `grape_calls` on `127.0.0.1:33070`, user `grape` — no password is shipped; set it in `config/local.php` (copy `config/local.php.example`);
+- PHP HTTP server `127.0.0.1:8181`, WebSocket `127.0.0.1:8182` — reachable only through the Caddy proxy on 8443;
 - room capacity 10, chat message limit 500 characters, WebSocket ping 25 s.
 
 Credentials never belong in `config/config.php`, which is versioned. Use `config/local.php` or the `DATABASE_USERNAME` / `DATABASE_PASSWORD` environment variables.
@@ -148,7 +148,7 @@ bin\start-host.bat
 REM Stop everything started by start-host (only this project's processes)
 bin\stop-host.bat
 
-REM Development mode: PHP on 8000, WebSocket on 8081, no Caddy/HTTPS
+REM Development mode: PHP on 8000, WebSocket on 8182, no Caddy/HTTPS
 bin\start-dev.bat
 
 REM Logs
@@ -246,7 +246,7 @@ grape-new/
 
 ### Signaling flow
 1. User joins the room through the REST API.
-2. The browser opens a WebSocket (same-origin `wss://<host>/ws`; falls back to `ws://<host>:8081` on HTTP pages).
+2. The browser opens a WebSocket (same-origin `wss://<host>/ws`; falls back to `ws://<host>:8182` on HTTP pages).
 3. The server notifies the other participants and returns the participant list.
 4. WebRTC peer connections are created (mesh topology).
 5. SDP offers/answers and ICE candidates are exchanged over the WebSocket.
@@ -284,7 +284,7 @@ Measured on the reference machine after the current tuning:
 | Camera fails with "Could not start video source" | the saved camera id no longer exists, or another app holds the device | handled: the client validates the saved id, falls back to any camera and shows a PT-BR message; close OBS/Zoom/Discord if it persists |
 | Everything loads slowly the first time | cold PHP process / no opcache | already handled (opcache + warm-up); worst case restart `start-host.bat` |
 | Media does not connect although chat works | NAT/ICE, not the WebSocket | same VPN should be enough; otherwise configure TURN in `config/config.php` |
-| XAMPP's Apache holds port 443 | Apache answers instead of Caddy | stop Apache (`taskkill /F /IM httpd.exe`) or disable its service |
+| XAMPP's Apache holds port 8443 | Apache answers instead of Caddy | stop Apache (`taskkill /F /IM httpd.exe`) or disable its service |
 
 Full startup guide: [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md).
 
@@ -310,7 +310,7 @@ Full startup guide: [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md).
 3. **No chat persistence**: chat messages are not stored.
 4. **Single room per user**.
 5. **Browser support**: modern browser with WebRTC; Firefox needs the CA imported manually.
-6. **No public exposure**: services listen on `0.0.0.0` but are meant for the Radmin VPN only. Do not expose `8080`/`8081` to the internet.
+6. **No public exposure**: services listen on `0.0.0.0` but are meant for the Radmin VPN only. Do not expose `8181`/`8182` to the internet.
 7. **Single-threaded PHP server**: adequate for small rooms, not a production web server.
 8. **TURN for hostile NATs**: STUN covers most cases; otherwise configure TURN.
 
@@ -351,7 +351,7 @@ Full startup guide: [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md).
 **Reliability**
 - `avatar_data` widened to `MEDIUMTEXT`; the join no longer fails when a profile photo is large.
 - Profile photos are downscaled to 256 px JPEG in the browser (also fixes the 1 MB WebSocket message limit in Ratchet).
-- WebSocket client now tries the same-origin `/ws` proxy and the direct `:8081` endpoint, remembers the working one, keeps retrying instead of giving up, and shows `Reconectando... (n)`.
+- WebSocket client now tries the same-origin `/ws` proxy and the direct `:8182` endpoint, remembers the working one, keeps retrying instead of giving up, and shows `Reconectando... (n)`.
 - Faster reconnect (300 ms → 5 s backoff) plus immediate retry when the tab regains focus.
 
 **Earlier fixes (multiplayer communication)**

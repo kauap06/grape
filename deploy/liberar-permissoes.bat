@@ -18,8 +18,8 @@ if "%HOST_IP%"=="" (
     exit /b 1
 )
 
-set URL=https://%HOST_IP%
-set URL_HTTP=http://%HOST_IP%:8080
+set URL=https://%HOST_IP%:8443
+set URL_HTTP=http://%HOST_IP%:8181
 
 for %%B in ("Google\Chrome" "Microsoft\Edge") do (
     REM Camera e microfone sem perguntar

@@ -17,12 +17,12 @@ This document describes the testing procedures for the Gaming Calls platform.
 
 ```bash
 # Start servers
-bin/start-host.bat     # Windows (starts both HTTP on 8080 and WebSocket on 8081)
+bin/start-host.bat     # Windows (starts both HTTP on 8181 and WebSocket on 8182)
 ./bin/start-dev.sh     # Linux/macOS
 
 # Or manually:
 # Terminal 1: php server/websocket-server.php
-# Terminal 2: php -S 0.0.0.0:8080 -t public
+# Terminal 2: php -S 0.0.0.0:8181 -t public
 ```
 
 ## Test Cases
@@ -31,7 +31,7 @@ bin/start-host.bat     # Windows (starts both HTTP on 8080 and WebSocket on 8081
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1.1 | Open http://localhost:8080 | Home page loads with dark theme |
+| 1.1 | Open http://localhost:8181 | Home page loads with dark theme |
 | 1.2 | Enter display name | Name saved to localStorage |
 | 1.3 | Select avatar | Avatar preview updates |
 | 1.4 | Upload custom avatar | Custom image shown in preview |
@@ -256,7 +256,7 @@ import { test, expect } from '@playwright/test';
 
 test('create and join room', async ({ page, context }) => {
   // User 1 creates room
-  await page.goto('http://localhost:8080');
+  await page.goto('http://localhost:8181');
   await page.fill('#room-name', 'E2E Test');
   await page.click('#create-room-btn');
   await expect(page).toHaveURL(/\/room\.php\?code=/);
@@ -281,7 +281,7 @@ test('create and join room', async ({ page, context }) => {
 
 ```javascript
 // In browser console
-const ws = new WebSocket('ws://localhost:8081');
+const ws = new WebSocket('ws://localhost:8182');
 ws.onmessage = (e) => console.log('WS:', JSON.parse(e.data));
 ws.onopen = () => ws.send(JSON.stringify({type:'join',payload:{...}}));
 ```

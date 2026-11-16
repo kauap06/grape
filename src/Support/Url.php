@@ -45,14 +45,14 @@ class Url
     }
 
     /**
-     * Base do link de convite: http://<IP do Radmin>:8080 quando o host o informa
+     * Base do link de convite: http://<IP do Radmin>:8181 quando o host o informa
      * (variável de ambiente RADMIN_IP, definida pelo start-host.bat); senão, a origem da requisição.
      */
     public static function inviteBase(): string
     {
         $ip = trim((string) getenv('RADMIN_IP'));
         if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
-            $port = (int) ($_SERVER['SERVER_PORT'] ?? 8080) ?: 8080;
+            $port = (int) ($_SERVER['SERVER_PORT'] ?? 8181) ?: 8181;
             return 'http://' . $ip . ':' . $port . self::basePath();
         }
         return self::absolute();
@@ -61,7 +61,7 @@ class Url
     /**
      * URL do servidor WebSocket (ws:// ou wss:// conforme o protocolo da página).
      */
-    public static function websocket(int $port = 8081): string
+    public static function websocket(int $port = 8182): string
     {
         $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
             || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');

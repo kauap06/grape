@@ -747,15 +747,15 @@ function buildWebSocketCandidates() {
     if (!list.includes(url)) list.push(url);
   };
 
-  // 1) O que o servidor calculou (mesma origem /ws em HTTPS, porta 8081 em HTTP)
+  // 1) O que o servidor calculou (mesma origem /ws em HTTPS, porta 8182 em HTTP)
   add(configured);
 
   if (isHttpsPage) {
     add(`wss://${location.host}/ws`);
   } else {
-    add(`ws://${hostname}:8081`);
-    // 3) Proxy HTTPS do Caddy - útil quando a porta 8081 está bloqueada
-    add(`wss://${hostname}/ws`);
+    add(`ws://${hostname}:8182`);
+    // 3) Proxy HTTPS do Caddy - útil quando a porta 8182 está bloqueada
+    add(`wss://${hostname}:8443/ws`);
   }
 
   return list;
@@ -821,7 +821,7 @@ function scheduleReconnect() {
   Logger.log(`Reconnecting in ${delay}ms (attempt ${state.wsReconnectAttempts})`);
 
   if (state.wsReconnectAttempts === state.maxReconnectAttempts + 1) {
-    Toast.error('Não foi possível conectar ao servidor de sinalização. Verifique se o host abriu as portas 8080/8081 e 443.', 8000);
+    Toast.error('Não foi possível conectar ao servidor de sinalização. Verifique se o host abriu as portas 8181/8182 e 8443.', 8000);
   }
 
   setTimeout(() => {

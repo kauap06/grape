@@ -32,7 +32,7 @@ Database::setConfig(Config::get('database'));
 
 // Get WebSocket config
 $wsHost = Config::get('websocket.host', '0.0.0.0');
-$wsPort = Config::get('websocket.port', 8081);
+$wsPort = Config::get('websocket.port', 8182);
 
 // Create event loop
 $loop = Factory::create();

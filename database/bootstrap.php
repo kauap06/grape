@@ -42,7 +42,7 @@ function randomPassword(): string
 }
 
 $dsnHost = Config::get('database.host', '127.0.0.1');
-$dsnPort = (int) Config::get('database.port', 3306);
+$dsnPort = (int) Config::get('database.port', 33070);
 $dbName = Config::get('database.database', 'grape_calls');
 
 // ------------------------------------------------------------------

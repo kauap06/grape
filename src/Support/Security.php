@@ -46,7 +46,7 @@ class Security
         if (!$hostOnly) {
             return '';
         }
-        $wsPort = (int) (\GamingCalls\Config\Config::get('websocket.port', 8081));
+        $wsPort = (int) (\GamingCalls\Config\Config::get('websocket.port', 8182));
         return ' ws://' . $hostOnly . ':' . $wsPort . ' wss://' . $hostOnly;
     }
 
