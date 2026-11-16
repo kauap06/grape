@@ -21,7 +21,7 @@ SessionManager::start();
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
 if (!SessionManager::validateCsrfToken($csrfToken)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Invalid CSRF token']);
+    echo json_encode(['error' => 'Sessão expirada. Recarregue a página']);
     exit;
 }
 
@@ -45,19 +45,19 @@ $settings = $input['settings'] ?? null;
 
 if (empty($name)) {
     http_response_code(400);
-    echo json_encode(['error' => 'Room name is required']);
+    echo json_encode(['error' => 'Digite o nome da sala']);
     exit;
 }
 
 if (strlen($name) > 100) {
     http_response_code(400);
-    echo json_encode(['error' => 'Room name too long (max 100 characters)']);
+    echo json_encode(['error' => 'O nome da sala deve ter até 100 caracteres']);
     exit;
 }
 
 if ($maxParticipants < 2 || $maxParticipants > 10) {
     http_response_code(400);
-    echo json_encode(['error' => 'Max participants must be between 2 and 10']);
+    echo json_encode(['error' => 'Escolha entre 2 e 10 participantes']);
     exit;
 }
 
@@ -85,5 +85,5 @@ try {
 } catch (\Throwable $e) {
     error_log('Create room error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['error' => 'Failed to create room']);
+    echo json_encode(['error' => 'Não foi possível criar a sala']);
 }

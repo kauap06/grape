@@ -26,14 +26,14 @@ header('Cache-Control: no-store');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
 $csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
 if (!SessionManager::validateCsrfToken($csrfToken)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Invalid CSRF token']);
+    echo json_encode(['error' => 'Sessão expirada. Recarregue a página']);
     exit;
 }
 
@@ -68,7 +68,7 @@ try {
 } catch (\Throwable $e) {
     error_log('Falha ao apagar dados do usuário: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['error' => 'Could not reset the data']);
+    echo json_encode(['error' => 'Não foi possível apagar os dados']);
     exit;
 }
 

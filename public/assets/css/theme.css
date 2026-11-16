@@ -391,7 +391,7 @@ body.is-compact .settings-body .profile-card,
 body.is-compact .dock { border-radius: var(--radius-md); }
 body.is-compact .pane,
 body.is-compact .chat-message-content {
-  background: #271f47;
+  background: #16121d;
   color: #f6f1ff;
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -450,7 +450,7 @@ body.is-compact .side-tab[aria-selected="true"] {
 body.is-compact .view-tab[aria-selected="true"]::after,
 body.is-compact .side-tab.active::after { background: var(--text); }
 body.is-compact .person.active {
-  background: var(--min-surface);
+  background: #241e33;
   border-color: var(--min-line);
   box-shadow: none;
 }
@@ -497,7 +497,7 @@ body.is-compact .pane,
 body.is-compact .side-panel,
 body.is-compact .chat-message-content,
 body.is-compact .settings-body .profile-card {
-  background: #271f47;
+  background: #16121d;
   color: #f6f1ff;
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);

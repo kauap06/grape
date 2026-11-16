@@ -38,9 +38,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   updateAvatarPreview();
   await loadDevices();
-  
+
   Modal.init();
-  
+
+  // Link de convite inválido: o room.php redireciona para cá com o aviso.
+  if (new URLSearchParams(window.location.search).get('error') === 'invalid_room') {
+    Toast.error('Sala não encontrada');
+  }
+
   Logger.log('Home page ready');
 });
 
@@ -220,7 +225,7 @@ function applyCompactMode(enabled, silent = false) {
 function saveProfile() {
   saveDisplayName();
   saveProfileToStorage();
-  Toast.success('Perfil salvo com sucesso!');
+  Toast.success('Perfil salvo');
 }
 
 function saveProfileToStorage() {
@@ -254,12 +259,12 @@ function handleAvatarUpload(e) {
   if (!file) return;
   
   if (!file.type.startsWith('image/')) {
-    Toast.error('Por favor, selecione uma imagem válida');
+    Toast.error('Selecione uma imagem válida');
     return;
   }
   
   if (file.size > 5 * 1024 * 1024) {
-    Toast.error('A imagem deve ter no máximo 5MB');
+    Toast.error('A imagem deve ter no máximo 5 MB');
     return;
   }
   
@@ -269,7 +274,7 @@ function handleAvatarUpload(e) {
     state.avatar = { type: 'custom', data: reduced };
     updateAvatarPreview();
     saveProfileToStorage();
-    Toast.success('Avatar personalizado salvo!');
+    Toast.success('Foto atualizada');
   };
   reader.readAsDataURL(file);
   
@@ -304,19 +309,54 @@ async function loadDevices() {
   }
 }
 
+// Câmera e microfone são testados separadamente: um aparelho em uso por
+// outra aba ou programa (NotReadableError) não esconde o resultado do outro.
 async function testMediaDevices() {
-  const constraints = await Devices.getConstraints(true, true, {
-    deviceId: elements.cameraSelect.value || undefined,
-    audioDeviceId: elements.micSelect.value || undefined
-  });
-  
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    stream.getTracks().forEach(track => track.stop());
-    Toast.success('Dispositivos funcionando corretamente!');
-  } catch (e) {
-    Logger.error('Media test failed:', e);
-    Toast.error(`Erro ao testar dispositivos: ${e.message}`);
+  const testar = async (video) => {
+    const constraints = await Devices.getConstraints(video, !video, {
+      deviceId: elements.cameraSelect.value || undefined,
+      audioDeviceId: elements.micSelect.value || undefined
+    });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream.getTracks().forEach(track => track.stop());
+      return null;
+    } catch (e) {
+      Logger.warn(`Media test failed (${video ? 'video' : 'audio'}):`, e);
+      return e;
+    }
+  };
+
+  const [erroCamera, erroMic] = await Promise.all([testar(true), testar(false)]);
+
+  const mensagem = (erro, camera) => {
+    switch (erro?.name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return `Permissão de ${camera ? 'câmera' : 'microfone'} negada`;
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return camera ? 'A câmera está em uso' : 'O microfone está em uso';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return camera ? 'Nenhuma câmera encontrada' : 'Nenhum microfone encontrado';
+      default:
+        return camera ? 'Não foi possível testar a câmera' : 'Não foi possível testar o microfone';
+    }
+  };
+
+  const negado = (erro) => erro?.name === 'NotAllowedError' || erro?.name === 'SecurityError';
+
+  if (!erroCamera && !erroMic) {
+    Toast.success('Dispositivos funcionando');
+  } else if (erroCamera && erroMic && negado(erroCamera) && negado(erroMic)) {
+    Toast.error('Permissão de câmera e microfone negada');
+  } else if (!erroCamera) {
+    Toast.warning(`Câmera funcionando. ${mensagem(erroMic, false)}`);
+  } else if (!erroMic) {
+    Toast.warning(`Microfone funcionando. ${mensagem(erroCamera, true)}`);
+  } else {
+    Toast.error(`${mensagem(erroCamera, true)}. ${mensagem(erroMic, false)}`);
   }
 }
 
@@ -335,7 +375,7 @@ function saveSettings() {
     maxBitrate: parseInt(elements.maxBitrate.value)
   });
   
-  Toast.success('Configurações salvas!');
+  Toast.success('Configurações salvas');
   Modal.close('settings-modal');
 }
 
@@ -366,14 +406,14 @@ async function createRoom() {
     });
     
     if (response.success) {
-      Toast.success('Sala criada com sucesso!');
+      Toast.success('Sala criada');
       window.location.href = `${API.baseUrl}/room.php?code=${response.room.invite_code}`;
     } else {
-      throw new Error(response.error || 'Falha ao criar sala');
+      throw new Error(response.error || 'Não foi possível criar a sala');
     }
   } catch (e) {
     Logger.error('Create room failed:', e);
-    Toast.error(`Erro ao criar sala: ${e.message}`);
+    Toast.error(e.message || 'Não foi possível criar a sala');
   } finally {
     elements.createRoomBtn.disabled = false;
     elements.createRoomBtn.textContent = 'Criar sala';
@@ -385,7 +425,7 @@ async function createRoom() {
  * localStorage e cookies. Volta ao estado de primeiro acesso.
  */
 async function resetUserData() {
-  if (!window.confirm('Apagar todos os seus dados salvos? Perfil, preferências e dispositivos voltam ao padrão.')) return;
+  if (!window.confirm('Apagar seus dados salvos? Não dá para desfazer.')) return;
 
   const botao = elements.resetDataBtn;
   if (botao) botao.disabled = true;
@@ -410,10 +450,10 @@ async function resetUserData() {
 
 async function joinRoom() {
   const inviteCode = elements.inviteCode.value.trim().toUpperCase();
-  const displayName = elements.displayName.value.trim() || state.displayName || 'Anônimo';
+  const displayName = elements.displayName.value.trim() || state.displayName || 'Jogador';
   
   if (!inviteCode) {
-    Toast.error('Digite o código de convite');
+    Toast.error('Digite o código da sala');
     return;
   }
   
@@ -434,19 +474,19 @@ async function joinRoom() {
     });
     
     if (response.success) {
-      Toast.success('Entrou na sala!');
+      Toast.success('Você entrou na sala');
       window.location.href = `${API.baseUrl}/room.php?code=${inviteCode}`;
     } else if (response.locked) {
-      throw new Error('A sala está trancada pelo anfitrião');
+      throw new Error('A sala está trancada');
     } else {
-      throw new Error(response.error || 'Falha ao entrar na sala');
+      throw new Error(response.error || 'Não foi possível entrar na sala');
     }
   } catch (e) {
     Logger.error('Join room failed:', e);
-    Toast.error(`Erro ao entrar na sala: ${e.message}`);
+    Toast.error(e.message || 'Não foi possível entrar na sala');
   } finally {
     elements.joinRoomBtn.disabled = false;
-    elements.joinRoomBtn.textContent = 'Entrar na sala';
+    elements.joinRoomBtn.textContent = 'Entrar';
   }
 }
 

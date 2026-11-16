@@ -20,14 +20,14 @@ SessionManager::start();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
 $csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
 if (!SessionManager::validateCsrfToken($csrfToken)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Invalid CSRF token']);
+    echo json_encode(['error' => 'Sessão expirada. Recarregue a página']);
     exit;
 }
 
@@ -42,26 +42,26 @@ $avatarData = $input['avatar_data'] ?? null;
 
 if (empty($inviteCode)) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invite code is required']);
+    echo json_encode(['error' => 'Digite o código da sala']);
     exit;
 }
 
 if (empty($displayName)) {
     http_response_code(400);
-    echo json_encode(['error' => 'Display name is required']);
+    echo json_encode(['error' => 'Digite seu nome']);
     exit;
 }
 
 if (strlen($displayName) > 50) {
     http_response_code(400);
-    echo json_encode(['error' => 'Display name too long (max 50 characters)']);
+    echo json_encode(['error' => 'O nome deve ter até 50 caracteres']);
     exit;
 }
 
 $room = Room::findByInviteCode($inviteCode);
 if (!$room) {
     http_response_code(404);
-    echo json_encode(['error' => 'Room not found or inactive']);
+    echo json_encode(['error' => 'Sala não encontrada']);
     exit;
 }
 
@@ -76,7 +76,7 @@ $isHost = hash_equals($room->creatorSessionId, (string) $sessionId);
 if (!$isHost && !$room->canJoin()) {
     http_response_code($room->isLocked ? 423 : 403);
     echo json_encode([
-        'error' => $room->isLocked ? 'Room is locked by the host' : 'Room is full or expired',
+        'error' => $room->isLocked ? 'A sala está trancada' : 'A sala está cheia',
         'locked' => $room->isLocked,
     ]);
     exit;
@@ -101,5 +101,5 @@ try {
 } catch (\Throwable $e) {
     error_log('Join room error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['error' => 'Failed to join room']);
+    echo json_encode(['error' => 'Não foi possível entrar na sala']);
 }

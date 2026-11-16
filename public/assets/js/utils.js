@@ -335,19 +335,21 @@ const API = {
       config.body = JSON.stringify(config.body);
     }
     
+    let response;
     try {
-      const response = await fetch(url, config);
-      const data = await response.json().catch(() => ({}));
-      
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      response = await fetch(url, config);
     } catch (error) {
       Logger.error(`API error (${endpoint}):`, error);
-      throw error;
+      throw new Error('Sem conexão com o servidor');
     }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      Logger.error(`API error (${endpoint}):`, data.error || response.status);
+      throw new Error(data.error || 'Não foi possível concluir a ação');
+    }
+
+    return data;
   },
   
   get(endpoint) { return this.request(endpoint, { method: 'GET' }); },
@@ -406,10 +408,11 @@ const Devices = {
     selectElement.innerHTML = '';
     if (placeholder) selectElement.appendChild(placeholder);
     
-    devices.forEach(device => {
+    devices.forEach((device, index) => {
       const option = document.createElement('option');
       option.value = device.deviceId;
-      option.textContent = device.label || `Dispositivo ${device.deviceId.slice(0, 8)}...`;
+      // Sem permissão o navegador esconde o nome: numera para diferenciar.
+      option.textContent = device.label || `Dispositivo ${index + 1}`;
       if (device.deviceId === currentDeviceId) option.selected = true;
       selectElement.appendChild(option);
     });

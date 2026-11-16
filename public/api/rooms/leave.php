@@ -18,14 +18,14 @@ SessionManager::start();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
 $csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
 if (!SessionManager::validateCsrfToken($csrfToken)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Invalid CSRF token']);
+    echo json_encode(['error' => 'Sessão expirada. Recarregue a página']);
     exit;
 }
 
@@ -33,7 +33,7 @@ $roomId = SessionManager::getCurrentRoomId();
 $sessionId = SessionManager::getId();
 
 if (!$roomId || !$sessionId) {
-    echo json_encode(['success' => true, 'message' => 'Not in a room']);
+    echo json_encode(['success' => true, 'message' => 'Você não está em uma sala']);
     exit;
 }
 
@@ -45,9 +45,9 @@ try {
 
     SessionManager::clearCurrentRoom();
 
-    echo json_encode(['success' => true, 'message' => 'Left room']);
+    echo json_encode(['success' => true, 'message' => 'Você saiu da sala']);
 } catch (\Throwable $e) {
     error_log('Leave room error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['error' => 'Failed to leave room']);
+    echo json_encode(['error' => 'Não foi possível sair da sala']);
 }

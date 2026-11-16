@@ -16,7 +16,7 @@ Database::setConfig(Config::get('database'));
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
@@ -24,14 +24,14 @@ $inviteCode = strtoupper(trim($_GET['code'] ?? ''));
 
 if (empty($inviteCode)) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invite code is required']);
+    echo json_encode(['error' => 'Digite o código da sala']);
     exit;
 }
 
 $room = Room::findByInviteCode($inviteCode);
 if (!$room) {
     http_response_code(404);
-    echo json_encode(['error' => 'Room not found']);
+    echo json_encode(['error' => 'Sala não encontrada']);
     exit;
 }
 

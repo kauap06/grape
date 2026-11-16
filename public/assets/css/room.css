@@ -506,6 +506,26 @@ body.is-compact .room-code { border-radius: 6px; }
   background: var(--color-bg-active);
   color: var(--color-text-secondary);
 }
+
+/* Visão em grade: pilha com 2 participantes sorteados no lugar do avatar vazio */
+.viewing .user-avatar.is-stack,
+.theme-grape .viewing .user-avatar.is-stack,
+body.is-compact .viewing .user-avatar.is-stack {
+  width: auto;
+  height: 28px;
+  overflow: visible;
+  background: transparent;
+  background-image: none;
+  border-radius: 0;
+}
+.viewing .user-avatar.is-stack > .user-avatar,
+body.is-compact .viewing .user-avatar.is-stack > .user-avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+  box-shadow: 0 0 0 2px var(--color-bg-primary);
+}
+.viewing .user-avatar.is-stack > .user-avatar + .user-avatar { margin-left: -7px; }
 .viewing-name {
   font-size: 14px;
   font-weight: var(--font-weight-medium);

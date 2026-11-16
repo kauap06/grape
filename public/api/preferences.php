@@ -32,14 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
 $csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
 if (!SessionManager::validateCsrfToken($csrfToken)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Invalid CSRF token']);
+    echo json_encode(['error' => 'Sessão expirada. Recarregue a página']);
     exit;
 }
 
@@ -47,7 +47,7 @@ $raw = file_get_contents('php://input');
 $data = json_decode((string) $raw, true);
 if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid JSON body']);
+    echo json_encode(['error' => 'Requisição inválida']);
     exit;
 }
 
@@ -66,7 +66,7 @@ foreach ($allowed as $key) {
 
 if (!Preferences::save($clean)) {
     http_response_code(500);
-    echo json_encode(['error' => 'Could not save preferences']);
+    echo json_encode(['error' => 'Não foi possível salvar as preferências']);
     exit;
 }
 

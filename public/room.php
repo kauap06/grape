@@ -123,14 +123,14 @@ $prefsJson = json_encode(
                 <ul class="people" id="participants-list"></ul>
                 <button class="invite-btn" id="invite-btn" type="button">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                    Convidar pessoas
+                    Convidar
                 </button>
             </section>
 
             <section class="side-panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
                 <div class="chat-messages" id="chat-messages"></div>
                 <form class="chat-form" id="chat-form" autocomplete="off">
-                    <textarea class="chat-input" id="chat-input" placeholder="Digite uma mensagem..." maxlength="500" rows="1"></textarea>
+                    <textarea class="chat-input" id="chat-input" placeholder="Mensagem" maxlength="500" rows="1"></textarea>
                     <button type="submit" class="icon-btn chat-send" aria-label="Enviar">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     </button>
@@ -162,13 +162,13 @@ $prefsJson = json_encode(
                         Tela
                         <i class="live-pip" aria-hidden="true"></i>
                     </button>
-                    <button class="view-tab" role="tab" id="view-tab-grid" data-view="grid" aria-selected="false" aria-label="Todos os participantes" title="Ver todos os participantes">
+                    <button class="view-tab" role="tab" id="view-tab-grid" data-view="grid" aria-selected="false" aria-label="Todos os participantes" title="Todos os participantes">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
                         <span class="view-tab-label">Participantes</span>
                     </button>
                 </div>
 
-                <button class="popout-btn" id="popout-btn" type="button" title="Janela flutuante (P)" aria-label="Abrir em janela flutuante" aria-pressed="false" hidden>
+                <button class="popout-btn" id="popout-btn" type="button" title="Janela flutuante (P)" aria-label="Janela flutuante" aria-pressed="false" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/><path d="M15 3h6v6M21 3l-8 8"/></svg>
                 </button>
                 <button class="icon-btn" id="fullscreen-btn" aria-label="Tela cheia" title="Tela cheia (F)">
@@ -185,7 +185,7 @@ $prefsJson = json_encode(
                     <div class="pane-resize-corner" data-corner="ne" aria-hidden="true"></div>
                     <div class="pane-resize-corner" data-corner="sw" aria-hidden="true"></div>
                     <div class="pane-resize-corner" data-corner="se" aria-hidden="true"></div>
-                    <button type="button" class="cam-close" data-action="hide-camera" aria-label="Fechar câmera" title="Fechar câmera">
+                    <button type="button" class="cam-close" data-action="hide-camera" aria-label="Ocultar câmera" title="Ocultar câmera">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                 </div>
@@ -197,13 +197,13 @@ $prefsJson = json_encode(
                 <button type="button" class="cam-restore" id="cam-restore" data-action="show-camera" aria-label="Mostrar câmera" title="Mostrar câmera" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                 </button>
-                <div class="stage-grid" id="stage-grid" aria-label="Participantes da sala"></div>
+                <div class="stage-grid" id="stage-grid" aria-label="Participantes"></div>
                 <div class="stage-none" id="stage-none">
-                    <p>Selecione um participante para ver o que ele está transmitindo.</p>
+                    <p>Selecione um participante.</p>
                 </div>
             </div>
             <div class="stage-detached" id="stage-detached" hidden>
-                <p>Vídeo e tela estão em uma janela separada.</p>
+                <p>Vídeo e tela estão na janela flutuante.</p>
                 <button type="button" class="empty-action" id="popin-btn">Trazer de volta</button>
             </div>
         </main>
@@ -213,15 +213,15 @@ $prefsJson = json_encode(
             <div class="dock-spacer"></div>
 
             <div class="dock-main">
-                <button class="dock-btn" id="toggle-mic-btn" aria-label="Microfone" title="Microfone (M)" aria-pressed="false">
+                <button class="dock-btn" id="toggle-mic-btn" aria-label="Mutar microfone" title="Mutar microfone (M)" aria-pressed="false">
                     <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                     <svg class="ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                 </button>
-                <button class="dock-btn" id="toggle-deafen-btn" aria-label="Ensurdecer (silenciar saída de áudio)" title="Silenciar áudio de saída (D)" aria-pressed="false">
+                <button class="dock-btn" id="toggle-deafen-btn" aria-label="Ensurdecer" title="Ensurdecer (D)" aria-pressed="false">
                     <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 15a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h3v3zM3 15a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H3v3z"/></svg>
                     <svg class="ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 14.5-7.1M21 12v2"/><path d="M21 15a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h3v3zM3 15a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H3v3z"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 </button>
-                <button class="dock-btn" id="toggle-camera-btn" aria-label="Câmera" title="Câmera (V)" aria-pressed="true">
+                <button class="dock-btn" id="toggle-camera-btn" aria-label="Ligar câmera" title="Ligar câmera (V)" aria-pressed="true">
                     <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                     <svg class="ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 </button>
@@ -229,20 +229,20 @@ $prefsJson = json_encode(
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M12 13V8M9.5 10.5L12 8l2.5 2.5"/></svg>
                     <i class="dock-dot" aria-hidden="true"></i>
                 </button>
-                <button class="dock-btn" id="dock-invite-btn" aria-label="Convidar pessoas" title="Copiar link de convite">
+                <button class="dock-btn" id="dock-invite-btn" aria-label="Convidar" title="Copiar link de convite">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
                 </button>
-                <button class="dock-btn dock-leave" id="leave-call-btn" aria-label="Sair da chamada" title="Sair da chamada">
+                <button class="dock-btn dock-leave" id="leave-call-btn" aria-label="Sair da sala" title="Sair da sala">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
                 </button>
             </div>
 
             <div class="dock-side">
-                <button class="dock-btn dock-ghost" id="toggle-notif-btn" aria-label="Silenciar notificações da sala" title="Silenciar notificações da sala" aria-pressed="false">
+                <button class="dock-btn dock-ghost" id="toggle-notif-btn" aria-label="Silenciar notificações" title="Silenciar notificações" aria-pressed="false">
                     <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                     <svg class="ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 </button>
-                <button class="dock-btn dock-ghost" id="layout-btn" aria-label="Ver vídeo e tela lado a lado" title="Vídeo e tela lado a lado" aria-pressed="false">
+                <button class="dock-btn dock-ghost" id="layout-btn" aria-label="Lado a lado" title="Lado a lado" aria-pressed="false">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
                 </button>
 
@@ -282,7 +282,7 @@ $prefsJson = json_encode(
                     </button>
                     <button type="button" class="settings-tab" role="tab" id="settings-tab-stream" data-tab="stream" aria-selected="false" aria-controls="settings-panel-stream">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                        <span>Transmissão</span>
+                        <span>Vídeo</span>
                     </button>
                 </div>
 
@@ -292,8 +292,8 @@ $prefsJson = json_encode(
                         <div class="profile-card">
                             <div class="profile-avatar" id="profile-avatar-preview" aria-hidden="true"></div>
                             <div class="profile-fields">
-                                <label for="profile-name" class="form-label">Nome de exibição</label>
-                                <input type="text" id="profile-name" class="settings-input" maxlength="50" autocomplete="off" placeholder="Como você quer ser chamado">
+                                <label for="profile-name" class="form-label">Nome</label>
+                                <input type="text" id="profile-name" class="settings-input" maxlength="50" autocomplete="off" placeholder="Seu nome">
                                 <span class="field-hint"><span id="profile-name-count">0</span>/50</span>
                             </div>
                         </div>
@@ -308,7 +308,7 @@ $prefsJson = json_encode(
                                 </button>
                                 <button type="button" class="btn btn-ghost btn-sm" id="profile-photo-remove" hidden>Remover foto</button>
                             </div>
-                            <p class="field-hint">Imagens de até 5 MB. Todos na sala veem a mudança assim que você salvar.</p>
+                            <p class="field-hint">Até 5 MB. A mudança aparece para todos ao salvar.</p>
                         </div>
 
                         <div class="settings-group">
@@ -339,19 +339,18 @@ $prefsJson = json_encode(
                             <select id="speaker-select" class="form-select"></select>
                         </div>
                         <div class="settings-group">
-                            <span class="form-label">Qualidade do áudio</span>
+                            <span class="form-label">Áudio</span>
                             <div class="switch-list">
                                 <label class="switch-row">
-                                    <span class="switch-text"><strong>Supressão de ruído</strong><small>Reduz sons de fundo, como teclado e ventilador.</small></span>
+                                    <span class="switch-text"><strong>Supressão de ruído</strong><small>Reduz ruídos de fundo.</small></span>
                                     <input type="checkbox" id="noise-suppression" class="switch" checked>
                                 </label>
                                 <label class="switch-row">
-                                    <span class="switch-text"><strong>Cancelamento de eco</strong><small>Evita que o som dos alto-falantes volte pelo microfone.</small></span>
+                                    <span class="switch-text"><strong>Cancelamento de eco</strong><small>Evita eco do alto-falante.</small></span>
                                     <input type="checkbox" id="echo-cancellation" class="switch" checked>
                                 </label>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-secondary" id="test-media-btn">Testar dispositivos</button>
                     </section>
 
                     <!-- Transmissão -->
@@ -372,7 +371,7 @@ $prefsJson = json_encode(
                                 <span class="range-value" id="max-bitrate-value">2500 kbps</span>
                             </div>
                             <input type="range" id="max-bitrate" class="form-range" min="500" max="5000" step="500" value="2500">
-                            <p class="field-hint">Valores maiores deixam a imagem mais nítida, mas exigem mais internet.</p>
+                            <p class="field-hint">Mais qualidade exige mais internet.</p>
                         </div>
                         <div class="settings-group">
                             <label for="frame-rate" class="form-label">Taxa de quadros</label>

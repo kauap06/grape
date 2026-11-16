@@ -131,9 +131,9 @@ const hasScreenShare = hasMediaDevices && typeof navigator.mediaDevices.getDispl
 // Mensagem explicando o motivo real quando a API não existe
 function mediaUnavailableMessage(what) {
   if (!window.isSecureContext) {
-    return `${what} exige conexão segura. Acesse o site por HTTPS (ou localhost).`;
+    return `${what} exige uma conexão segura (HTTPS)`;
   }
-  return `${what} não é suportado neste navegador. Tente Chrome, Edge ou Firefox atualizados fora de navegadores embutidos (Discord, Instagram etc.).`;
+  return `${what} não é suportado neste navegador. Tente Chrome, Edge ou Firefox`;
 }
 
 // Janela separada (nativa do sistema) com vídeo e tela
@@ -296,6 +296,51 @@ function avatarHtml(participant, extraClass = '') {
   return `<div class="user-avatar ${extraClass}" style="${escapeAttr(parts.style)}">${parts.html}</div>`;
 }
 
+// Avatar do cabeçalho na visão em grade: uma pilha com 2 participantes
+// sorteados (ou só um, quando a sala tem uma pessoa só).
+let groupAvatarSig = '';
+let groupAvatarPool = [];
+let groupAvatarKey = '';
+
+function groupAvatarPicks(count) {
+  const ids = state.order.filter(id => state.participants.has(id));
+  const key = ids.join('|');
+  if (key !== groupAvatarKey) {
+    groupAvatarKey = key;
+    groupAvatarPool = ids.slice();
+    for (let i = groupAvatarPool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [groupAvatarPool[i], groupAvatarPool[j]] = [groupAvatarPool[j], groupAvatarPool[i]];
+    }
+  }
+  return groupAvatarPool.filter(id => state.participants.has(id)).slice(0, count);
+}
+
+function renderGroupAvatar() {
+  const el = elements.viewingAvatar;
+  if (!el) return;
+
+  const picks = groupAvatarPicks(2);
+  const sig = picks.map(id => {
+    const p = state.participants.get(id);
+    return `${id}:${p?.display_name || ''}:${(p?.avatar_data || '').length}`;
+  }).join('|');
+  if (sig === groupAvatarSig) return;
+  groupAvatarSig = sig;
+
+  el.classList.toggle('is-stack', picks.length > 1);
+  if (picks.length > 1) {
+    el.style.cssText = '';
+    el.innerHTML = picks.map(id => avatarHtml(state.participants.get(id))).join('');
+  } else if (picks.length === 1) {
+    const p = state.participants.get(picks[0]);
+    setAvatar(el, p.avatar_data, p.display_name);
+  } else {
+    el.innerHTML = '';
+    el.style.cssText = '';
+  }
+}
+
 function cacheElements() {
   const $ = (id) => document.getElementById(id);
 
@@ -378,7 +423,6 @@ function cacheElements() {
   elements.cameraSelect = $('camera-select');
   elements.micSelect = $('mic-select');
   elements.speakerSelect = $('speaker-select');
-  elements.testMediaBtn = $('test-media-btn');
   elements.videoQuality = $('video-quality');
   elements.maxBitrate = $('max-bitrate');
   elements.maxBitrateValue = $('max-bitrate-value');
@@ -482,7 +526,6 @@ function setupEventListeners() {
   elements.settingsClose?.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsCancel?.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsSave?.addEventListener('click', saveSettings);
-  elements.testMediaBtn?.addEventListener('click', testMediaDevices);
   elements.settingsTabs?.forEach(tab => tab.addEventListener('click', () => switchSettingsTab(tab.dataset.tab)));
   elements.profileName?.addEventListener('input', onProfileNameInput);
   elements.profilePhotoBtn?.addEventListener('click', () => elements.profilePhotoInput?.click());
@@ -675,11 +718,11 @@ function onProfilePhotoSelected(e) {
   e.target.value = '';
   if (!file) return;
   if (!file.type.startsWith('image/')) {
-    Toast.error('Por favor, selecione uma imagem válida');
+    Toast.error('Selecione uma imagem válida');
     return;
   }
   if (file.size > 5 * 1024 * 1024) {
-    Toast.error('A imagem deve ter no máximo 5MB');
+    Toast.error('A imagem deve ter no máximo 5 MB');
     return;
   }
   const reader = new FileReader();
@@ -701,7 +744,7 @@ function applyProfileChanges() {
   const name = (elements.profileName?.value || '').trim();
   if (!name) {
     switchSettingsTab('profile');
-    Toast.error('Digite um nome de exibição.');
+    Toast.error('Digite seu nome');
     elements.profileName?.focus();
     return false;
   }
@@ -750,7 +793,7 @@ function saveSettings() {
   };
 
   Storage.set('roomSettings', state.settings);
-  Toast.success('Configurações salvas!');
+  Toast.success('Configurações salvas');
   Modal.close('settings-modal');
 
   applyVideoConstraints();
@@ -846,7 +889,7 @@ function scheduleReconnect() {
   Logger.log(`Reconnecting in ${delay}ms (attempt ${state.wsReconnectAttempts})`);
 
   if (state.wsReconnectAttempts === state.maxReconnectAttempts + 1) {
-    Toast.error('Não foi possível conectar ao servidor de sinalização. Verifique se o host abriu as portas 8181/8182 e 8443.', 8000);
+    Toast.error('Sem conexão com o servidor. Verifique sua internet.', 8000);
   }
 
   setTimeout(() => {
@@ -950,7 +993,7 @@ function handleWebSocketMessage(message) {
     case 'room-lock':
       state.isLocked = message.payload?.locked === true;
       renderAdminControls();
-      Toast.info(state.isLocked ? 'A sala foi trancada pelo host' : 'A sala foi destrancada');
+      Toast.info(state.isLocked ? 'Sala trancada' : 'Sala destrancada');
       break;
   }
 }
@@ -1027,7 +1070,7 @@ async function handleJoined(payload) {
   updateMediaButtons();
   renderParticipants();
 
-  Toast.success(`Entrou na sala "${escapeHtml(state.roomName)}"`);
+  Toast.success(`Você entrou em "${escapeHtml(state.roomName)}"`);
 }
 
 function handleParticipantJoined(payload) {
@@ -1047,7 +1090,7 @@ function handleParticipantJoined(payload) {
     renderAll();
   }
 
-  notifyRoom(`${escapeHtml(payload.display_name)} entrou na sala`);
+  notifyRoom(`${escapeHtml(payload.display_name)} entrou`);
   playNotificationSound('join.mp3');
 }
 
@@ -1069,7 +1112,7 @@ function handleParticipantLeft(payload) {
     renderAll();
   }
 
-  if (participant) notifyRoom(`${escapeHtml(participant.display_name)} saiu da sala`);
+  if (participant) notifyRoom(`${escapeHtml(participant.display_name)} saiu`);
 }
 
 function handleParticipantsList(payload) {
@@ -1099,10 +1142,10 @@ function handleMediaStateChanged(payload) {
   const after = flagsOf(sessionId);
   if (sessionId !== state.sessionId) {
     if (!before.screen && after.screen) {
-      notifyRoom(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+      notifyRoom(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { avatar: participant.avatar_data });
       playNotificationSound('screen.mp3');
     } else if (before.screen && !after.screen) {
-      notifyRoom(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { title: 'Compartilhamento de tela', avatar: participant.avatar_data });
+      notifyRoom(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { avatar: participant.avatar_data });
       // Só quem está olhando a aba dessa pessoa precisa do aviso sonoro
       if (state.view.sessionId === sessionId) playNotificationSound('live-close.mp3');
     }
@@ -1113,7 +1156,9 @@ function handleMediaStateChanged(payload) {
 }
 
 function handleWebSocketError(payload) {
-  Toast.error(`${escapeHtml(payload.code)}: ${escapeHtml(payload.message)}`);
+  // O código fica no console (depuração); na tela, só a mensagem em português.
+  Logger.warn('WebSocket error:', payload?.code);
+  Toast.error(payload?.message || 'Algo deu errado. Tente de novo.');
 }
 
 function sendWebSocketMessage(type, payload) {
@@ -1531,7 +1576,7 @@ async function initializeLocalMedia() {
   const prefs = Storage.get('profile', {});
 
   if (!hasMediaDevices) {
-    Toast.error(mediaUnavailableMessage('O acesso à câmera e ao microfone'));
+    Toast.error(mediaUnavailableMessage('Câmera e microfone'));
     state.localStream = new MediaStream();
     state.media.microphoneMuted = true;
     state.media.cameraMuted = true;
@@ -1566,7 +1611,7 @@ async function initializeLocalMedia() {
       Logger.warn('Camera unavailable, joining audio-only:', err);
       delete constraints.video;
       state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-      Toast.warning('Câmera indisponível. Entrando só com áudio.');
+      Toast.warning('Câmera indisponível. Entrando sem vídeo.');
     }
 
     // Preferência "entrar mutado" e mute restaurado/definido pelo servidor
@@ -1579,7 +1624,7 @@ async function initializeLocalMedia() {
     Logger.log('Local media initialized');
   } catch (e) {
     Logger.error('Failed to initialize local media:', e);
-    Toast.error(`Erro ao acessar mídia: ${escapeHtml(e.message)}`);
+    Toast.error('Não foi possível acessar câmera e microfone');
     state.localStream = new MediaStream();
     state.media.microphoneMuted = true;
   }
@@ -1615,17 +1660,25 @@ async function setupMediaDevices() {
 
 function updateMediaButtons() {
   elements.toggleMicBtn?.setAttribute('aria-pressed', String(state.media.microphoneMuted));
-  // Distingue o mute de origem: o do host e visivel no proprio botao
-  const rotuloMic = state.muteState === 'HOST_MUTED'
-    ? 'Microfone silenciado pelo host (clique para liberar)'
-    : state.muteState === 'SELF_MUTED'
-      ? 'Microfone silenciado por você (M)'
-      : 'Microfone (M)';
+  // O rótulo descreve o que o clique faz; a origem do mute (host ou
+  // participante) aparece na lista e no destaque do próprio botão.
+  const semMic = !state.localStream?.getAudioTracks().length;
+  const rotuloMic = semMic
+    ? 'Microfone (M)'
+    : state.media.microphoneMuted
+      ? 'Ativar microfone (M)'
+      : 'Mutar microfone (M)';
   elements.toggleMicBtn?.setAttribute('title', rotuloMic);
   elements.toggleMicBtn?.setAttribute('aria-label', rotuloMic);
   elements.toggleMicBtn?.classList.toggle('host-muted', state.muteState === 'HOST_MUTED');
   elements.toggleCameraBtn?.setAttribute('aria-pressed', String(state.media.cameraMuted));
+  const rotuloCamera = state.media.cameraMuted ? 'Ligar câmera (V)' : 'Desligar câmera (V)';
+  elements.toggleCameraBtn?.setAttribute('title', rotuloCamera);
+  elements.toggleCameraBtn?.setAttribute('aria-label', rotuloCamera);
   elements.toggleScreenBtn?.setAttribute('aria-pressed', String(state.media.screenShare));
+  const rotuloTela = state.media.screenShare ? 'Parar compartilhamento' : 'Compartilhar tela';
+  elements.toggleScreenBtn?.setAttribute('title', rotuloTela);
+  elements.toggleScreenBtn?.setAttribute('aria-label', rotuloTela);
   elements.toggleDeafenBtn?.setAttribute('aria-pressed', String(state.deafened));
   elements.layoutBtn?.setAttribute('aria-pressed', String(state.view.split));
   elements.popoutBtn?.setAttribute('aria-pressed', String(!!popout.mode));
@@ -1688,7 +1741,7 @@ function applyMuteState(payload) {
     state.media.microphoneMuted = mudo;
 
     if (payload.cause === 'host') {
-      Toast.info(mudo ? 'O host silenciou seu microfone' : 'O host liberou seu microfone');
+      Toast.info(mudo ? 'O host silenciou seu microfone' : 'O host ativou seu microfone');
     }
   } else {
     const p = state.participants.get(target);
@@ -1706,7 +1759,7 @@ function applyMuteState(payload) {
 
 function toggleMicrophone() {
   if (!state.localStream?.getAudioTracks().length) {
-    Toast.warning('Nenhum microfone disponível.');
+    Toast.warning('Nenhum microfone encontrado');
     return;
   }
 
@@ -1745,13 +1798,13 @@ function toggleDeafen() {
     state.deafened = true;
     state.micMutedBeforeDeafen = state.muteState;
     setMicMuted(true);
-    Toast.info('Áudio e microfone silenciados');
+    Toast.info('Áudio silenciado');
   } else {
     state.deafened = false;
     // Só reabre o microfone se ele não estava silenciado por conta própria
     if (state.micMutedBeforeDeafen === 'UNMUTED') setMicMuted(false);
     state.micMutedBeforeDeafen = null;
-    Toast.info('Áudio reativado');
+    Toast.info('Áudio ativado');
   }
 
   applyOutputMute();
@@ -1805,17 +1858,17 @@ function mensagemErroCamera(e) {
   switch (e?.name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return 'Permissão de câmera negada. Libere a câmera para este site no cadeado da barra de endereço.';
+      return 'Acesso à câmera negado. Libere a câmera nas permissões do site';
     case 'NotReadableError':
     case 'TrackStartError':
-      return 'A câmera está ocupada por outro programa (OBS, Zoom, Discord...). Feche-o e tente de novo.';
+      return 'A câmera está em uso em outro programa';
     case 'NotFoundError':
     case 'DevicesNotFoundError':
-      return 'Nenhuma câmera encontrada neste computador.';
+      return 'Nenhuma câmera encontrada';
     case 'OverconstrainedError':
-      return 'A câmera não aceitou a resolução pedida.';
+      return 'A câmera não aceita essa resolução';
     default:
-      return e?.message ? 'Falha ao acessar a câmera.' : 'Não foi possível ligar a câmera.';
+      return 'Não foi possível ligar a câmera';
   }
 }
 
@@ -1887,7 +1940,7 @@ async function abrirCamera() {
 
 async function startCamera() {
   if (!hasMediaDevices) {
-    Toast.error(mediaUnavailableMessage('A câmera'));
+    Toast.error(mediaUnavailableMessage('Câmera'));
     return;
   }
 
@@ -1911,7 +1964,7 @@ async function toggleScreenShare() {
 
 async function startScreenShare() {
   if (!hasScreenShare) {
-    Toast.error(mediaUnavailableMessage('O compartilhamento de tela'));
+    Toast.error(mediaUnavailableMessage('Compartilhamento de tela'));
     return;
   }
 
@@ -1929,7 +1982,7 @@ async function startScreenShare() {
   } catch (e) {
     Logger.error('Screen share failed:', e);
     if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') {
-      Toast.error(`Erro ao compartilhar tela: ${escapeHtml(e.message)}`);
+      Toast.error('Não foi possível compartilhar a tela');
     }
     return;
   }
@@ -1963,7 +2016,7 @@ async function startScreenShare() {
   syncAllPeers();
   broadcastMediaState();
   renderAll();
-  Toast.success('Compartilhamento de tela iniciado');
+  Toast.success('Compartilhando tela');
 }
 
 function stopScreenShare() {
@@ -1981,7 +2034,7 @@ function stopScreenShare() {
   syncAllPeers();
   broadcastMediaState();
   renderAll();
-  Toast.info('Compartilhamento de tela finalizado');
+  Toast.info('Compartilhamento encerrado');
 }
 
 async function applyVideoConstraints() {
@@ -2013,24 +2066,6 @@ async function applyVideoConstraints() {
       sender.setParameters(parameters).catch(e => Logger.warn('Set parameters failed:', e));
     });
   });
-}
-
-async function testMediaDevices() {
-  const constraints = await Devices.getConstraints(true, true, {
-    deviceId: elements.cameraSelect.value || undefined,
-    audioDeviceId: (await micIdValido()) || undefined,
-    noiseSuppression: state.settings.noiseSuppression,
-    echoCancellation: state.settings.echoCancellation
-  });
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    stream.getTracks().forEach(track => track.stop());
-    Toast.success('Dispositivos funcionando corretamente!');
-  } catch (e) {
-    Logger.error('Media test failed:', e);
-    Toast.error(`Erro ao testar dispositivos: ${escapeHtml(e.message)}`);
-  }
 }
 
 // ============================================
@@ -2174,8 +2209,7 @@ function renderStage() {
   if (grid) {
     elements.viewingName.textContent = 'Todos os participantes';
     if (popout.nameEl) popout.nameEl.textContent = elements.viewingName.textContent;
-    elements.viewingAvatar.innerHTML = '';
-    elements.viewingAvatar.style.cssText = '';
+    renderGroupAvatar();
     elements.viewingAvatar.classList.remove('audio-active');
     [elements.viewTabCamera, elements.viewTabScreen].forEach(el => el.setAttribute('aria-selected', 'false'));
     elements.camRestore.hidden = true;
@@ -2193,6 +2227,8 @@ function renderStage() {
     if (popout.nameEl) popout.nameEl.textContent = '—';
     elements.viewingAvatar.innerHTML = '';
     elements.viewingAvatar.style.cssText = '';
+    elements.viewingAvatar.classList.remove('is-stack');
+    groupAvatarSig = '';
     ['camera', 'screen'].forEach(kind => {
       const p = elements.panes[kind];
       p.pane.hidden = true;
@@ -2206,6 +2242,8 @@ function renderStage() {
   const flags = flagsOf(id);
 
   setAvatar(elements.viewingAvatar, participant.avatar_data, participant.display_name);
+  elements.viewingAvatar.classList.remove('is-stack');
+  groupAvatarSig = '';
   if (state.audioActive.has(id)) {
     elements.viewingAvatar.classList.add('audio-active');
   } else {
@@ -2249,7 +2287,7 @@ function renderStage() {
     emptyKey: `scr:${id}:${flags.screen}:${connecting}`,
     emptyHtml: flags.screen
       ? `<div class="spinner-text">Carregando tela...</div>`
-      : `${ICONS.screen.replace('<svg', '<svg class="ic-big"')}<div>${isSelf ? 'Você não está compartilhando a tela' : 'Nenhuma tela sendo compartilhada'}</div>${isSelf ? '<button class="empty-action" data-action="toggle-screen">Compartilhar tela</button>' : ''}`
+      : `${ICONS.screen.replace('<svg', '<svg class="ic-big"')}<div>Nenhuma tela compartilhada</div>${isSelf ? '<button class="empty-action" data-action="toggle-screen">Compartilhar tela</button>' : ''}`
   });
 
   positionFloatingCamera();
@@ -2273,7 +2311,7 @@ function renderGrid() {
     const status = [];
     if (flags.camera) status.push(`<span class="is-live">${ICONS.camera}Câmera</span>`);
     if (flags.screen) status.push(`<span class="is-live">${ICONS.screen}Tela</span>`);
-    if (!status.length) status.push('<span>Somente áudio</span>');
+    if (!status.length) status.push('<span>Só áudio</span>');
 
     return `
       <button type="button" class="grid-block" data-grid-select="${escapeAttr(id)}" aria-label="Ver ${escapeAttr(p.display_name || 'Jogador')}">
@@ -2408,7 +2446,7 @@ function handleAdminCameraOff(payload) {
       broadcastMediaState();
       updateMediaButtons();
       renderAll();
-      Toast.info('O host desligou sua camera');
+      Toast.info('O host desligou sua câmera');
     }
     return;
   }
@@ -2421,7 +2459,7 @@ function handleAdminCameraOff(payload) {
 
 function handleKicked() {
   state.kicked = true;
-  Toast.warning('Voce foi removido da sala pelo host');
+  Toast.warning('Você foi removido da sala');
   try { state.ws?.close(); } catch { /* já fechado */ }
   setTimeout(() => { window.location.href = `${API.baseUrl}/`; }, 900);
 }
@@ -2592,16 +2630,16 @@ function renderParticipants() {
     if (conn) {
       sub = conn;
     } else if (flags.screen && flags.camera) {
-      sub = `${ICONS.screen}Transmitindo tela e câmera`;
+      sub = `${ICONS.screen}Tela e câmera`;
       live = true;
     } else if (flags.screen) {
-      sub = `${ICONS.screen}Transmitindo tela`;
+      sub = `${ICONS.screen}Compartilhando tela`;
       live = true;
     } else if (flags.camera) {
       sub = `${ICONS.camera}Câmera ligada`;
       live = true;
     } else {
-      sub = 'Somente áudio';
+      sub = 'Só áudio';
     }
 
     const locallyMuted = !!peer?.localMuted;
@@ -2628,7 +2666,7 @@ function renderParticipants() {
           <span class="person-text">
             <span class="person-name-row">
               <span class="person-name">${escapeHtml(p.display_name || 'Jogador')}${isSelf ? ' (você)' : ''}</span>
-              ${p.session_id === state.hostSessionId ? '<span class="host-badge" title="Anfitrião">host</span>' : ''}
+              ${p.session_id === state.hostSessionId ? '<span class="host-badge" title="Host da sala">host</span>' : ''}
             </span>
             <span class="person-sub ${live ? 'is-live' : ''}">${sub}</span>
           </span>
@@ -2661,7 +2699,7 @@ function openPersonMenu(sessionId, anchor) {
   ];
   if (!isSelf) {
     items.push(peer?.localMuted
-      ? `<button role="menuitem" data-act="unmute">${ICONS.volume}Ativar áudio</button>`
+      ? `<button role="menuitem" data-act="unmute">${ICONS.volume}Voltar a ouvir</button>`
       : `<button role="menuitem" data-act="mute">${ICONS.volumeOff}Silenciar para mim</button>`);
   }
     if (state.isHost) {
@@ -2670,14 +2708,14 @@ function openPersonMenu(sessionId, anchor) {
       const alvo = state.participants.get(sessionId);
       const alvoMute = alvo?.mute_state ?? alvo?.metadata?.mute_state ?? 'UNMUTED';
       if (alvoMute === 'SELF_MUTED') {
-        items.push(`<button role="menuitem" data-act="admin-mute" disabled title="O participante silenciou o próprio microfone">${ICONS.micOff}Silenciado pelo participante</button>`);
+        items.push(`<button role="menuitem" data-act="admin-mute" disabled>${ICONS.micOff}Silenciado pelo participante</button>`);
       } else if (alvoMute === 'HOST_MUTED') {
-        items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.mic}Deixar falar</button>`);
+        items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.mic}Ativar microfone</button>`);
       } else {
         items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.micOff}Silenciar microfone</button>`);
       }
       items.push(`<button role="menuitem" data-act="admin-camera" ${flags.camera ? '' : 'disabled'}>${ICONS.camera}Desligar câmera</button>`);
-      items.push(`<button role="menuitem" data-act="admin-kick">${ICONS.headphonesOff}Expulsar da sala</button>`);
+      items.push(`<button role="menuitem" data-act="admin-kick">${ICONS.headphonesOff}Remover</button>`);
     }
   elements.personMenu.innerHTML = items.join('');
   elements.personMenu.hidden = false;
@@ -2772,7 +2810,7 @@ function updateChatBadge() {
   if (state.chatUnread > 0) {
     const badge = document.createElement('span');
     badge.className = 'chat-notice';
-    badge.setAttribute('aria-label', `${state.chatUnread} mensagem nova`);
+    badge.setAttribute('aria-label', state.chatUnread === 1 ? '1 mensagem nova' : `${state.chatUnread} mensagens novas`);
     badge.textContent = '!';
     tab.appendChild(badge);
   }
@@ -2793,7 +2831,7 @@ function sendChatMessage(e) {
   // Anti-spam: exige 3 segundos entre mensagens (o texto fica no campo)
   const wait = CHAT_COOLDOWN_MS - (Date.now() - lastChatSentAt);
   if (wait > 0) {
-    Toast.warning(`Aguarde ${Math.ceil(wait / 1000)}s para enviar outra mensagem.`);
+    Toast.warning(`Aguarde ${Math.ceil(wait / 1000)}s para enviar outra mensagem`);
     return;
   }
   lastChatSentAt = Date.now();
@@ -2825,7 +2863,7 @@ function updateNotifButton() {
   const btn = elements.toggleNotifBtn;
   if (!btn) return;
   btn.setAttribute('aria-pressed', String(notificationsMuted));
-  const label = notificationsMuted ? 'Reativar notificações da sala' : 'Silenciar notificações da sala';
+  const label = notificationsMuted ? 'Reativar notificações' : 'Silenciar notificações';
   btn.setAttribute('aria-label', label);
   btn.setAttribute('title', label);
 }
@@ -2834,7 +2872,7 @@ function toggleNotifications() {
   notificationsMuted = !notificationsMuted;
   Storage.set('notificationsMuted', notificationsMuted);
   updateNotifButton();
-  Toast.info(notificationsMuted ? 'Notificações da sala silenciadas' : 'Notificações da sala reativadas');
+  Toast.info(notificationsMuted ? 'Notificações silenciadas' : 'Notificações reativadas');
 }
 
 // Aviso no canto da tela; não aparece quando as notificações estão silenciadas
@@ -2893,12 +2931,12 @@ function handleChatMessage(payload) {
   // Notificação toast de nova mensagem (exibe remetente, foto e conteúdo truncado)
   if (!isOwn) {
     const truncated = message.length > 100 ? message.slice(0, 100) + '…' : message;
-    notifyRoom(truncated, 8000, { title: displayName || 'Participante', avatar: avatarData });
+    notifyRoom(truncated, 8000, { title: displayName || 'Jogador', avatar: avatarData });
     playNotificationSound();
   }
 
   appendChatMessage({
-    displayName: displayName || 'Participante',
+    displayName: displayName || 'Jogador',
     avatar: avatarData,
     content: message,
     timestamp: timestamp ? new Date(timestamp * 1000) : new Date(),
@@ -2945,7 +2983,7 @@ function togglePopout() {
 async function openPopout() {
   if (popout.mode) return;
   if (!state.view.sessionId) {
-    Toast.info('Selecione um participante primeiro.');
+    Toast.info('Selecione um participante');
     return;
   }
 
@@ -3020,7 +3058,7 @@ async function openDocumentPopout() {
   const back = win.document.createElement('button');
   back.type = 'button';
   back.className = 'pip-btn pip-back';
-  back.title = 'Fechar e voltar para a sala';
+  back.title = 'Fechar';
   back.setAttribute('aria-label', 'Fechar janela');
   back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
   back.addEventListener('click', closePopout);
@@ -3054,7 +3092,7 @@ async function openVideoPopout() {
   const candidates = state.view.tab === 'screen' ? [panes.screen, panes.camera] : [panes.camera, panes.screen];
   const target = candidates.find(p => p.video.srcObject && p.video.readyState >= 1);
   if (!target || !document.pictureInPictureEnabled) {
-    Toast.warning('Nenhum vídeo disponível para abrir em janela separada.');
+    Toast.warning('Nenhum vídeo para abrir na janela flutuante');
     return;
   }
 
@@ -3062,7 +3100,7 @@ async function openVideoPopout() {
     await target.video.requestPictureInPicture();
   } catch (e) {
     Logger.warn('Video PiP failed:', e);
-    Toast.error('Não foi possível abrir a janela separada.');
+    Toast.error('Não foi possível abrir a janela flutuante');
     return;
   }
 
@@ -3192,7 +3230,7 @@ async function copyRoomCode() {
     document.execCommand('copy');
     input.remove();
   }
-  Toast.success('Código da sala copiado!');
+  Toast.success('Código copiado');
 }
 
 async function copyInviteLink() {
@@ -3208,7 +3246,7 @@ async function copyInviteLink() {
     document.execCommand('copy');
     input.remove();
   }
-  Toast.success('Link de convite copiado!');
+  Toast.success('Link copiado');
 }
 
 // ============================================

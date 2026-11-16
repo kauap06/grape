@@ -72,20 +72,20 @@ class SignalingServer implements MessageComponentInterface
         
         // Rate limiting check
         if (!$this->checkRateLimit($resourceId)) {
-            $this->sendError($from, 'RATE_LIMITED', 'Too many messages');
+            $this->sendError($from, 'RATE_LIMITED', 'Muitas ações em pouco tempo');
             return;
         }
 
         $data = json_decode($msg, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-            $this->sendError($from, 'INVALID_JSON', 'Invalid message format');
+            $this->sendError($from, 'INVALID_JSON', 'Mensagem inválida');
             return;
         }
 
         // Validate message size
         $maxSize = Config::get('websocket.max_message_size', 1048576);
         if (strlen($msg) > $maxSize) {
-            $this->sendError($from, 'MESSAGE_TOO_LARGE', 'Message exceeds maximum size');
+            $this->sendError($from, 'MESSAGE_TOO_LARGE', 'Mensagem muito grande');
             return;
         }
 
@@ -95,7 +95,7 @@ class SignalingServer implements MessageComponentInterface
 
         // O payload precisa ser um objeto/array; qualquer outra coisa causaria TypeError
         if (!is_array($payload)) {
-            $this->sendError($from, 'INVALID_PAYLOAD', 'Payload must be an object');
+            $this->sendError($from, 'INVALID_PAYLOAD', 'Mensagem inválida');
             return;
         }
 
@@ -153,13 +153,13 @@ class SignalingServer implements MessageComponentInterface
                     $this->handleAdminMuteAll($from);
                     break;
                 default:
-                    $this->sendError($from, 'UNKNOWN_TYPE', "Unknown message type: $type");
+                    $this->sendError($from, 'UNKNOWN_TYPE', 'Mensagem não suportada');
             }
         } catch (\Throwable $e) {
             error_log("WebSocket error [type=$type]: " . get_class($e) . ": " . $e->getMessage()
                 . " em " . $e->getFile() . ":" . $e->getLine()
                 . "\n" . $e->getTraceAsString());
-            $this->sendError($from, 'SERVER_ERROR', 'Internal server error');
+            $this->sendError($from, 'SERVER_ERROR', 'Erro no servidor. Tente de novo');
         }
     }
 
@@ -211,13 +211,13 @@ class SignalingServer implements MessageComponentInterface
         }
 
         if (empty($roomCode) || empty($sessionId)) {
-            $this->sendError($conn, 'INVALID_PAYLOAD', 'Room code and session ID required');
+            $this->sendError($conn, 'INVALID_PAYLOAD', 'Não foi possível entrar na sala');
             return;
         }
 
         $room = Room::findByInviteCode($roomCode);
         if (!$room) {
-            $this->sendError($conn, 'ROOM_NOT_FOUND', 'Room not found or inactive');
+            $this->sendError($conn, 'ROOM_NOT_FOUND', 'Sala não encontrada');
             return;
         }
 
@@ -225,7 +225,7 @@ class SignalingServer implements MessageComponentInterface
         $isHostEarly = hash_equals($room->creatorSessionId, (string) $sessionId);
         if (!$isHostEarly && !$room->canJoin()) {
             $this->sendError($conn, $room->isLocked ? 'ROOM_LOCKED' : 'ROOM_FULL',
-                $room->isLocked ? 'Room is locked by the host' : 'Room is full or expired');
+                $room->isLocked ? 'A sala está trancada' : 'A sala está cheia');
             return;
         }
 
@@ -327,7 +327,7 @@ class SignalingServer implements MessageComponentInterface
         $info = $this->connectionInfo[$resourceId] ?? null;
         
         if (!$info) {
-            $this->sendError($from, 'NOT_IN_ROOM', 'Not joined to any room');
+            $this->sendError($from, 'NOT_IN_ROOM', 'Você não está em uma sala');
             return;
         }
 
@@ -335,7 +335,7 @@ class SignalingServer implements MessageComponentInterface
         $targetResourceId = $this->findConnectionBySession($info['room_id'], $targetSessionId);
 
         if (!$targetResourceId) {
-            $this->sendError($from, 'TARGET_NOT_FOUND', 'Target participant not found');
+            $this->sendError($from, 'TARGET_NOT_FOUND', 'Participante não encontrado');
             return;
         }
 
@@ -408,7 +408,7 @@ class SignalingServer implements MessageComponentInterface
         $info = $this->connectionInfo[$resourceId] ?? null;
         
         if (!$info) {
-            $this->sendError($from, 'NOT_IN_ROOM', 'Not joined to any room');
+            $this->sendError($from, 'NOT_IN_ROOM', 'Você não está em uma sala');
             return;
         }
 
@@ -427,19 +427,19 @@ class SignalingServer implements MessageComponentInterface
         $info = $this->connectionInfo[$resourceId] ?? null;
 
         if (!$info) {
-            $this->sendError($from, 'NOT_IN_ROOM', 'Not joined to any room');
+            $this->sendError($from, 'NOT_IN_ROOM', 'Você não está em uma sala');
             return;
         }
 
         $message = trim((string) ($payload['message'] ?? ''));
         if ($message === '') {
-            $this->sendError($from, 'EMPTY_MESSAGE', 'Message cannot be empty');
+            $this->sendError($from, 'EMPTY_MESSAGE', 'Digite uma mensagem');
             return;
         }
 
         $maxLength = (int) Config::get('chat.max_length', 500);
         if (mb_strlen($message) > $maxLength) {
-            $this->sendError($from, 'MESSAGE_TOO_LONG', "Message exceeds {$maxLength} characters");
+            $this->sendError($from, 'MESSAGE_TOO_LONG', 'Mensagem muito longa');
             return;
         }
 
@@ -477,13 +477,13 @@ class SignalingServer implements MessageComponentInterface
         $info = $this->connectionInfo[$resourceId] ?? null;
 
         if (!$info) {
-            $this->sendError($from, 'NOT_IN_ROOM', 'Not joined to any room');
+            $this->sendError($from, 'NOT_IN_ROOM', 'Você não está em uma sala');
             return;
         }
 
         $displayName = trim((string) ($payload['display_name'] ?? ''));
         if ($displayName === '' || mb_strlen($displayName) > 50) {
-            $this->sendError($from, 'INVALID_NAME', 'Invalid display name');
+            $this->sendError($from, 'INVALID_NAME', 'Nome inválido');
             return;
         }
 
@@ -529,11 +529,11 @@ class SignalingServer implements MessageComponentInterface
     {
         $info = $this->connectionInfo[$conn->resourceId] ?? null;
         if (!$info) {
-            $this->sendError($conn, 'NOT_IN_ROOM', 'Join a room first');
+            $this->sendError($conn, 'NOT_IN_ROOM', 'Você não está em uma sala');
             return null;
         }
         if (empty($info['is_host'])) {
-            $this->sendError($conn, 'NOT_HOST', 'Only the room host can do this');
+            $this->sendError($conn, 'NOT_HOST', 'Só o host pode fazer isso');
             return null;
         }
         return (int) $info['room_id'];
@@ -589,18 +589,18 @@ class SignalingServer implements MessageComponentInterface
         if ($action === 'mute-self' || $action === 'unmute-self') {
             if (!$isSelf) {
                 return $this->muteReject($roomId, $targetSession, 'NOT_SELF',
-                    'Only the participant can change their own mute');
+                    'Só o próprio participante pode mudar o microfone');
             }
         } elseif ($action === 'host-mute' || $action === 'host-unmute') {
             if (!$isHost) {
                 // Admin existe no vocabulario do dominio, mas hoje so o host modera
                 return $this->muteReject($roomId, $targetSession,
                     $isAdmin ? 'ADMIN_CANNOT_UNMUTE' : 'NOT_HOST',
-                    $isAdmin ? 'Only the host can change another participant mute'
-                             : 'Only the room host can do this');
+                    $isAdmin ? 'Só o host pode fazer isso'
+                             : 'Só o host pode fazer isso');
             }
         } else {
-            return $this->muteReject($roomId, $targetSession, 'INVALID_ACTION', 'Unknown mute action');
+            return $this->muteReject($roomId, $targetSession, 'INVALID_ACTION', 'Ação inválida');
         }
 
         // Transicao de estado
@@ -629,7 +629,7 @@ class SignalingServer implements MessageComponentInterface
             case 'host-mute':
                 if ($current === self::MUTE_SELF) {
                     return $this->muteReject($roomId, $targetSession, 'SELF_MUTED',
-                        'Participant muted themselves; the host cannot remove that');
+                        'O participante se silenciou; só ele pode ativar');
                 }
                 if ($current === self::MUTE_UNMUTED) {
                     $next = self::MUTE_HOST;
@@ -640,7 +640,7 @@ class SignalingServer implements MessageComponentInterface
             case 'host-unmute':
                 if ($current === self::MUTE_SELF) {
                     return $this->muteReject($roomId, $targetSession, 'SELF_MUTED',
-                        'Participant muted themselves; only they can unmute');
+                        'O participante se silenciou; só ele pode ativar');
                 }
                 if ($current === self::MUTE_HOST) {
                     $next = self::MUTE_UNMUTED;
@@ -747,7 +747,7 @@ class SignalingServer implements MessageComponentInterface
     {
         $info = $this->connectionInfo[$from->resourceId] ?? null;
         if (!$info) {
-            $this->sendError($from, 'NOT_IN_ROOM', 'Join a room first');
+            $this->sendError($from, 'NOT_IN_ROOM', 'Você não está em uma sala');
             return;
         }
 
@@ -759,7 +759,7 @@ class SignalingServer implements MessageComponentInterface
         $result = $this->applyMuteTransition($roomId, $sessionId, $action, $sessionId, $this->roleOf($from));
 
         if (!$result['ok']) {
-            $this->sendError($from, (string) $result['reason'], (string) ($result['message'] ?? 'Mute rejected'));
+            $this->sendError($from, (string) $result['reason'], (string) ($result['message'] ?? 'Não foi possível alterar o microfone'));
             // Reafirma o estado atual para o cliente voltar ao que o servidor manda.
             $this->send($from, [
                 'type' => 'mute-state',
@@ -807,14 +807,14 @@ class SignalingServer implements MessageComponentInterface
         $targetSession = (string) ($payload['target_session_id'] ?? '');
         $muted = (bool) ($payload['muted'] ?? true);
         if ($targetSession === '') {
-            $this->sendError($from, 'INVALID_PAYLOAD', 'target_session_id required');
+            $this->sendError($from, 'INVALID_PAYLOAD', 'Participante não encontrado');
             return;
         }
 
         $targetId = $this->findConnectionBySession($roomId, $targetSession);
         $target = $targetId !== null ? ($this->connections[$targetId] ?? null) : null;
         if (!$target) {
-            $this->sendError($from, 'TARGET_LEFT', 'Target is not in the room');
+            $this->sendError($from, 'TARGET_LEFT', 'O participante saiu da sala');
             return;
         }
 
@@ -824,7 +824,7 @@ class SignalingServer implements MessageComponentInterface
         $result = $this->applyMuteTransition($roomId, $targetSession, $action, $actorSession, $this->roleOf($from));
 
         if (!$result['ok']) {
-            $this->sendError($from, (string) $result['reason'], (string) ($result['message'] ?? 'Mute rejected'));
+            $this->sendError($from, (string) $result['reason'], (string) ($result['message'] ?? 'Não foi possível alterar o microfone'));
             // Devolve o estado real para o host reverter a interface.
             $this->send($from, [
                 'type' => 'mute-state',
@@ -863,13 +863,13 @@ class SignalingServer implements MessageComponentInterface
         }
         $targetSession = (string) ($payload['target_session_id'] ?? '');
         if ($targetSession === '') {
-            $this->sendError($from, 'INVALID_PAYLOAD', 'target_session_id required');
+            $this->sendError($from, 'INVALID_PAYLOAD', 'Participante não encontrado');
             return;
         }
         $targetId = $this->findConnectionBySession($roomId, $targetSession);
         $target = $targetId !== null ? ($this->connections[$targetId] ?? null) : null;
         if (!$target) {
-            $this->sendError($from, 'TARGET_LEFT', 'Target is not in the room');
+            $this->sendError($from, 'TARGET_LEFT', 'O participante saiu da sala');
             return;
         }
 
@@ -888,13 +888,13 @@ class SignalingServer implements MessageComponentInterface
         }
         $targetSession = (string) ($payload['target_session_id'] ?? '');
         if ($targetSession === '') {
-            $this->sendError($from, 'INVALID_PAYLOAD', 'target_session_id required');
+            $this->sendError($from, 'INVALID_PAYLOAD', 'Participante não encontrado');
             return;
         }
         $targetId = $this->findConnectionBySession($roomId, $targetSession);
         $target = $targetId !== null ? ($this->connections[$targetId] ?? null) : null;
         if (!$target) {
-            $this->sendError($from, 'TARGET_LEFT', 'Target is not in the room');
+            $this->sendError($from, 'TARGET_LEFT', 'O participante saiu da sala');
             return;
         }
 
@@ -923,7 +923,7 @@ class SignalingServer implements MessageComponentInterface
             $room->update(['is_locked' => $locked]);
         } catch (\Throwable $e) {
             error_log("Falha ao trancar sala {$roomId}: " . $e->getMessage());
-            $this->sendError($from, 'SERVER_ERROR', 'Could not update the room');
+            $this->sendError($from, 'SERVER_ERROR', 'Não foi possível atualizar a sala');
             return;
         }
 

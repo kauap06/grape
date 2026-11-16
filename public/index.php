@@ -39,7 +39,7 @@ $prefsJson = json_encode(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Grape - Voice, Video & Screen Sharing for Gamers">
+    <meta name="description" content="Grape — conversas com voz, vídeo e compartilhamento de tela">
     <meta name="theme-color" content="#0e0a1c">
     <link rel="icon" type="image/png" href="<?= Url::asset('assets/img/logo-grape.png') ?>">
     <title>Grape</title>
@@ -87,12 +87,12 @@ $prefsJson = json_encode(
                                 <span id="avatar-initials"><?= $displayName ? strtoupper($displayName[0]) : '?' ?></span>
                             </div>
                             <div class="form-group">
-                                <label for="display-name" class="sr-only">Nome de exibição</label>
+                                <label for="display-name" class="sr-only">Nome</label>
                                 <input
                                     type="text"
                                     id="display-name"
                                     class="form-input"
-                                    placeholder="Digite seu nome"
+                                    placeholder="Seu nome"
                                     value="<?= htmlspecialchars($displayName) ?>"
                                     maxlength="50"
                                 >
@@ -127,14 +127,14 @@ $prefsJson = json_encode(
                                 <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
                                 <span class="switch-label">
                                     Modo compacto
-                                    <small>Um design mais minimalista e mais leve...</small>
+                                    <small>Visual minimalista, sem animações</small>
                                 </span>
                             </label>
                         </div>
                     </div>
 
                     <div class="profile-footer">
-                        <button type="button" class="btn btn-primary btn-full btn-lg btn-arrow" id="save-profile-btn">Salvar perfil</button>
+                        <button type="button" class="btn btn-primary btn-full btn-lg btn-arrow" id="save-profile-btn">Salvar</button>
                     </div>
                 </section>
 
@@ -159,13 +159,13 @@ $prefsJson = json_encode(
 
                         <div class="divider" aria-hidden="true"><span>ou</span></div>
 
-                        <article class="action-card tile" id="join-room-card" aria-label="Entrar em uma sala">
+                        <article class="action-card tile" id="join-room-card" aria-label="Entrar na sala">
                             <div class="join-row">
                                 <div class="form-group has-icon ic-hash">
-                                    <label for="invite-code" class="sr-only">Código de convite</label>
+                                    <label for="invite-code" class="sr-only">Código da sala</label>
                                     <input type="text" id="invite-code" class="form-input form-input-code" placeholder="Código da sala" maxlength="12" autocomplete="off">
                                 </div>
-                                <button type="button" class="btn btn-secondary btn-arrow" id="join-room-btn">Entrar na sala</button>
+                                <button type="button" class="btn btn-secondary btn-arrow" id="join-room-btn">Entrar</button>
                             </div>
                         </article>
                     </div>
@@ -187,7 +187,7 @@ $prefsJson = json_encode(
                 </div>
                 <div class="modal-body">
                     <div class="settings-section">
-                        <h3>Dispositivos de mídia</h3>
+                        <h3>Dispositivos</h3>
                         <div class="form-group">
                             <label for="camera-select" class="form-label">Câmera</label>
                             <select id="camera-select" class="form-select"></select>
@@ -204,19 +204,19 @@ $prefsJson = json_encode(
                     </div>
 
                     <div class="settings-section">
-                        <h3>Qualidade e rede</h3>
+                        <h3>Vídeo</h3>
                         <div class="form-group">
-                            <label for="video-quality" class="form-label">Qualidade de vídeo</label>
+                            <label for="video-quality" class="form-label">Resolução</label>
                             <select id="video-quality" class="form-select">
                                 <option value="auto">Automático</option>
-                                <option value="1080p">1080p (Full HD)</option>
-                                <option value="720p">720p (HD)</option>
+                                <option value="1080p">1080p</option>
+                                <option value="720p">720p</option>
                                 <option value="480p">480p</option>
                                 <option value="360p">360p</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="max-bitrate" class="form-label">Bitrate máximo (kbps)</label>
+                            <label for="max-bitrate" class="form-label">Bitrate máximo</label>
                             <input type="range" id="max-bitrate" class="form-range" min="500" max="5000" step="500" value="2500">
                             <span id="max-bitrate-value">2500 kbps</span>
                         </div>
@@ -224,8 +224,8 @@ $prefsJson = json_encode(
 
                     <div class="settings-section section-data">
                         <h3>Dados</h3>
-                        <p class="settings-hint">Apaga perfil, dados e preferências salvos neste dispositivo. Não dá para desfazer.</p>
-                        <button type="button" class="btn btn-danger" id="reset-data-btn">Apagar meus dados</button>
+                        <p class="settings-hint">Apaga perfil, preferências e dispositivos salvos neste navegador. Não dá para desfazer.</p>
+                        <button type="button" class="btn btn-danger" id="reset-data-btn">Apagar dados</button>
                     </div>
                 </div>
                 <div class="modal-footer">
