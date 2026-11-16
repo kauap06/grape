@@ -69,6 +69,13 @@ const state = {
     screenShare: false
   },
 
+  // Mute autoritativo vindo do servidor: UNMUTED | SELF_MUTED | HOST_MUTED.
+  // `muteBy` guarda quem aplicou (sessionId) e `muteSeq` descarta eventos
+  // repetidos ou fora de ordem.
+  muteState: 'UNMUTED',
+  muteBy: null,
+  muteSeq: 0,
+
   // Chat: contagem de mensagens não lidas e se o chat está aberto/visível.
   chatUnread: 0,
   chatViewed: false,
@@ -313,6 +320,24 @@ function cacheElements() {
   elements.chatMessages = $('chat-messages');
   elements.chatForm = $('chat-form');
   elements.chatInput = $('chat-input');
+
+  // Auto-resize chat textarea
+  function autoResizeTextarea() {
+    const textarea = elements.chatInput;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const maxHeight = 160; // max-height in px
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+  }
+
+  elements.chatInput?.addEventListener('input', autoResizeTextarea);
+  elements.chatInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      elements.chatForm?.dispatchEvent(new Event('submit'));
+    }
+  });
 
   elements.stageCard = $('stage-card');
   elements.stage = $('stage');
@@ -845,6 +870,16 @@ function joinRoomViaWebSocket() {
       metadata: mediaMetadata()
     }
   }));
+
+  // Preferência "entrar mutado": avisa o servidor já na entrada, antes do
+  // getUserMedia, para a lista de participantes não mostrar o microfone
+  // aberto enquanto a mídia local é preparada.
+  if (!state.joinedAt && prefereEntrarMudo()) {
+    state.muteState = 'SELF_MUTED';
+    state.muteBy = state.sessionId;
+    state.media.microphoneMuted = true;
+    sendWebSocketMessage('self-mute', { muted: true });
+  }
 }
 
 function mediaMetadata() {
@@ -861,7 +896,7 @@ function handleWebSocketMessage(message) {
 
   switch (message.type) {
     case 'joined':
-      handleJoined(message.payload);
+      handleJoined(message.payload).catch(e => Logger.error('handleJoined error:', e));
       break;
     case 'participant-joined':
       handleParticipantJoined(message.payload);
@@ -900,6 +935,9 @@ function handleWebSocketMessage(message) {
     case 'admin-muted':
       handleAdminMuted(message.payload);
       break;
+    case 'mute-state':
+      applyMuteState(message.payload);
+      break;
     case 'admin-camera-off':
       handleAdminCameraOff(message.payload);
       break;
@@ -917,7 +955,7 @@ function handleWebSocketMessage(message) {
   }
 }
 
-function handleJoined(payload) {
+async function handleJoined(payload) {
   Logger.log('Joined room:', payload.room.name);
 
   // A foto antiga foi reduzida antes de a conexão abrir: envia agora
@@ -936,6 +974,13 @@ function handleJoined(payload) {
   // Quem entra também ouve o próprio aviso de entrada
   playNotificationSound('join.mp3');
   state.isLocked = payload.is_locked === true;
+  // Reentrada/reconexão: só a primeira entrada aplica a preferência "entrar mutado"
+  const primeiraEntrada = !state.joinedAt;
+  // Mute restaurado do servidor (sobrevive a reconexão)
+  state.muteState = payload.mute_state === 'SELF_MUTED' ? 'SELF_MUTED'
+    : payload.mute_state === 'HOST_MUTED' ? 'HOST_MUTED' : 'UNMUTED';
+  state.muteBy = payload.mute_by ?? null;
+  state.muteSeq = Number(payload.mute_seq ?? 0);
   document.body.classList.toggle('is-host', state.isHost);
   renderAdminControls();
   elements.roomName.textContent = state.roomName;
@@ -951,7 +996,7 @@ function handleJoined(payload) {
   state.participants = next;
   state.order = Array.from(next.keys());
 
-  initializeWebRTC(payload.webrtc_config);
+  await initializeWebRTC(payload.webrtc_config);
 
   // Quem entra liga para todos que já estavam na sala
   state.order.forEach(sessionId => {
@@ -966,6 +1011,21 @@ function handleJoined(payload) {
   } else {
     renderAll();
   }
+
+  // Aplica o mute restaurado ao próprio microfone. Na primeira entrada a
+  // preferência "entrar mutado" também vale, e o servidor precisa saber
+  // disso: senão a lista de participantes mostra o microfone aberto.
+  const servidorMudo = state.muteState !== 'UNMUTED';
+  if (servidorMudo || (primeiraEntrada && prefereEntrarMudo())) {
+    state.media.microphoneMuted = true;
+    setMicMuted(true);
+    if (!servidorMudo) requestSelfMute();
+  } else {
+    state.media.microphoneMuted = false;
+    setMicMuted(false);
+  }
+  updateMediaButtons();
+  renderParticipants();
 
   Toast.success(`Entrou na sala "${escapeHtml(state.roomName)}"`);
 }
@@ -1028,6 +1088,11 @@ function handleMediaStateChanged(payload) {
 
   const before = flagsOf(sessionId);
   participant.metadata = { ...participant.metadata, ...mediaState };
+  // O mute vem do servidor: mantém o estado de origem em sincronia
+  if (mediaState?.mute_state) {
+    participant.mute_state = mediaState.mute_state;
+    participant.mute_by = mediaState.mute_by ?? null;
+  }
   autoAdjustTab(sessionId, before, flagsOf(sessionId));
 
   // Notificação toast quando alguém inicia/para de compartilhar tela
@@ -1504,7 +1569,8 @@ async function initializeLocalMedia() {
       Toast.warning('Câmera indisponível. Entrando só com áudio.');
     }
 
-    if (prefs.preferences?.autoMute) {
+    // Preferência "entrar mutado" e mute restaurado/definido pelo servidor
+    if (prefereEntrarMudo() || state.muteState !== 'UNMUTED') {
       state.localStream.getAudioTracks().forEach(t => t.enabled = false);
       state.media.microphoneMuted = true;
     }
@@ -1519,6 +1585,9 @@ async function initializeLocalMedia() {
   }
 
   state.media.cameraMuted = state.localStream.getVideoTracks().length === 0;
+  // Microfone local fechado, mas o servidor ainda pode achar que está aberto:
+  // pede a transição antes de reportar o estado de mídia.
+  requestSelfMute();
   updateMediaButtons();
   syncAllPeers();
   broadcastMediaState();
@@ -1546,6 +1615,15 @@ async function setupMediaDevices() {
 
 function updateMediaButtons() {
   elements.toggleMicBtn?.setAttribute('aria-pressed', String(state.media.microphoneMuted));
+  // Distingue o mute de origem: o do host e visivel no proprio botao
+  const rotuloMic = state.muteState === 'HOST_MUTED'
+    ? 'Microfone silenciado pelo host (clique para liberar)'
+    : state.muteState === 'SELF_MUTED'
+      ? 'Microfone silenciado por você (M)'
+      : 'Microfone (M)';
+  elements.toggleMicBtn?.setAttribute('title', rotuloMic);
+  elements.toggleMicBtn?.setAttribute('aria-label', rotuloMic);
+  elements.toggleMicBtn?.classList.toggle('host-muted', state.muteState === 'HOST_MUTED');
   elements.toggleCameraBtn?.setAttribute('aria-pressed', String(state.media.cameraMuted));
   elements.toggleScreenBtn?.setAttribute('aria-pressed', String(state.media.screenShare));
   elements.toggleDeafenBtn?.setAttribute('aria-pressed', String(state.deafened));
@@ -1556,6 +1634,27 @@ function updateMediaButtons() {
   syncMediaSession();
 }
 
+// Preferência do navegador: entrar na sala com o microfone fechado.
+function prefereEntrarMudo() {
+  const profile = Storage.get('profile', {});
+  return profile?.preferences?.autoMute === true;
+}
+
+// Pede ao servidor o mute que o microfone local já está aplicando.
+// O servidor é a fonte de verdade: sem isso a lista de participantes mostra
+// o microfone aberto enquanto o áudio já está silenciado.
+function requestSelfMute() {
+  if (state.muteState !== 'UNMUTED') return;
+  if (!state.media.microphoneMuted) return;
+  if (!state.localStream?.getAudioTracks().length) return;
+
+  state.muteState = 'SELF_MUTED';
+  state.muteBy = state.sessionId;
+  sendWebSocketMessage('self-mute', { muted: true });
+  updateMediaButtons();
+  renderParticipants();
+}
+
 // Liga/desliga o envio do microfone. Retorna false se não há microfone.
 function setMicMuted(muted) {
   const tracks = state.localStream?.getAudioTracks() || [];
@@ -1563,6 +1662,46 @@ function setMicMuted(muted) {
   tracks.forEach(track => track.enabled = !muted);
   state.media.microphoneMuted = muted;
   return true;
+}
+
+// Aplica o estado de mute vindo do servidor (fonte única de verdade).
+// Ignora eventos repetidos/atrasados pelo `seq` e atualiza a interface.
+function applyMuteState(payload) {
+  const seq = Number(payload?.seq ?? 0);
+  const target = payload?.session_id;
+  if (!target) return;
+
+  const meu = target === state.sessionId;
+
+  if (meu) {
+    // Evento mais antigo que o já aplicado: descarta.
+    if (seq && seq < state.muteSeq) return;
+    if (seq) state.muteSeq = seq;
+
+    const novo = payload.state === 'UNMUTED' ? 'UNMUTED'
+      : payload.state === 'HOST_MUTED' ? 'HOST_MUTED' : 'SELF_MUTED';
+    state.muteState = novo;
+    state.muteBy = payload.by ?? null;
+
+    const mudo = novo !== 'UNMUTED';
+    setMicMuted(mudo);
+    state.media.microphoneMuted = mudo;
+
+    if (payload.cause === 'host') {
+      Toast.info(mudo ? 'O host silenciou seu microfone' : 'O host liberou seu microfone');
+    }
+  } else {
+    const p = state.participants.get(target);
+    if (p) {
+      p.metadata = { ...(p.metadata || {}), mute_state: payload.state, mute_by: payload.by ?? null };
+      p.mute_state = payload.state;
+      p.mute_by = payload.by ?? null;
+    }
+  }
+
+  updateMediaButtons();
+  broadcastMediaState();
+  renderAll();
 }
 
 function toggleMicrophone() {
@@ -1577,25 +1716,40 @@ function toggleMicrophone() {
     state.micMutedBeforeDeafen = null;
     setMicMuted(false);
     applyOutputMute();
-  } else {
-    setMicMuted(!state.media.microphoneMuted);
+    updateMediaButtons();
+    broadcastMediaState();
+    renderParticipants();
+    // Encerrar o deafen libera o próprio mute no servidor.
+    sendWebSocketMessage('self-mute', { muted: false });
+    return;
   }
+
+  // O servidor decide: aqui só pedimos a transição e esperamos o mute-state.
+  // Otimista: aplica na hora para o botão responder sem atraso.
+  const querMudo = !(state.muteState !== 'UNMUTED');
+  setMicMuted(querMudo);
+  state.media.microphoneMuted = querMudo;
+  state.muteState = querMudo ? 'SELF_MUTED' : 'UNMUTED';
+  state.muteBy = querMudo ? state.sessionId : null;
 
   updateMediaButtons();
   broadcastMediaState();
   renderParticipants();
+
+  sendWebSocketMessage('self-mute', { muted: querMudo });
 }
 
 // Silencia (ou devolve) tudo o que eu ouço: vozes e áudio da tela de quem transmite
 function toggleDeafen() {
   if (!state.deafened) {
     state.deafened = true;
-    state.micMutedBeforeDeafen = state.media.microphoneMuted;
+    state.micMutedBeforeDeafen = state.muteState;
     setMicMuted(true);
     Toast.info('Áudio e microfone silenciados');
   } else {
     state.deafened = false;
-    if (state.micMutedBeforeDeafen === false) setMicMuted(false);
+    // Só reabre o microfone se ele não estava silenciado por conta própria
+    if (state.micMutedBeforeDeafen === 'UNMUTED') setMicMuted(false);
     state.micMutedBeforeDeafen = null;
     Toast.info('Áudio reativado');
   }
@@ -1604,6 +1758,9 @@ function toggleDeafen() {
   updateMediaButtons();
   broadcastMediaState();
   renderParticipants();
+
+  // O servidor precisa saber que o microfone efetivo mudou
+  sendWebSocketMessage('self-mute', { muted: state.deafened || state.muteState !== 'UNMUTED' });
 }
 
 function applyOutputMute() {
@@ -1883,15 +2040,17 @@ async function testMediaDevices() {
 function flagsOf(sessionId) {
   if (sessionId === state.sessionId) {
     return {
-      mic: !state.media.microphoneMuted && !!state.localStream?.getAudioTracks().length,
+      mic: state.muteState === 'UNMUTED' && !!state.localStream?.getAudioTracks().length,
       camera: !state.media.cameraMuted && !!state.localStream?.getVideoTracks().length,
       screen: state.media.screenShare,
       deafened: state.deafened
     };
   }
-  const meta = state.participants.get(sessionId)?.metadata || {};
+  const p = state.participants.get(sessionId);
+  const meta = p?.metadata || {};
+  const muteState = p?.mute_state ?? meta.mute_state;
   return {
-    mic: meta.microphoneMuted !== true,
+    mic: muteState ? muteState === 'UNMUTED' : meta.microphoneMuted !== true,
     camera: meta.cameraMuted === false,
     screen: meta.screenShare === true,
     deafened: meta.deafened === true
@@ -2221,26 +2380,25 @@ function renderAdminControls() {
 }
 
 
-// Sem session_id no payload = comando direto para mim; com session_id = estado de outro
+// Legado: o servidor hoje manda `mute-state` (com origem e seq). Mantido para
+// compatibilidade com clientes/servidores antigos, delegando a mesma regra.
 function handleAdminMuted(payload) {
+  const mudo = payload?.muted === true;
   if (!payload?.session_id) {
-    const querMudo = payload?.muted === true;
-    if (querMudo === state.media.microphoneMuted) return;
-
-    setMicMuted(querMudo);
-    // sem tracks o setMicMuted sai cedo: o estado e a dock precisam refletir assim mesmo
-    state.media.microphoneMuted = querMudo;
-    broadcastMediaState();
-    updateMediaButtons();
-    renderAll();
-    Toast.info(querMudo ? 'O host silenciou seu microfone' : 'O host liberou seu microfone');
+    applyMuteState({
+      session_id: state.sessionId,
+      state: mudo ? 'HOST_MUTED' : 'UNMUTED',
+      by: payload?.by ?? null,
+      cause: 'host'
+    });
     return;
   }
-  const p = state.participants.get(payload.session_id);
-  if (p) {
-    p.metadata = { ...(p.metadata || {}), microphoneMuted: payload.muted === true };
-    renderParticipants();
-  }
+  applyMuteState({
+    session_id: payload.session_id,
+    state: mudo ? 'HOST_MUTED' : 'UNMUTED',
+    by: payload?.by ?? null,
+    cause: 'host'
+  });
 }
 
 function handleAdminCameraOff(payload) {
@@ -2447,9 +2605,19 @@ function renderParticipants() {
     }
 
     const locallyMuted = !!peer?.localMuted;
+    const alvoMuteState = id === state.sessionId
+      ? state.muteState
+      : (state.participants.get(id)?.mute_state ?? state.participants.get(id)?.metadata?.mute_state ?? 'UNMUTED');
     const micIcon = locallyMuted ? ICONS.volumeOff : (flags.deafened ? ICONS.headphonesOff : (flags.mic ? ICONS.mic : ICONS.micOff));
-    const micClass = locallyMuted || flags.deafened || !flags.mic ? 'muted' : '';
-    const micTitle = locallyMuted ? 'Silenciado para você' : (flags.deafened ? 'Áudio desligado' : (flags.mic ? 'Microfone ligado' : 'Microfone desligado'));
+    const micClass = locallyMuted || flags.deafened || !flags.mic
+      ? (alvoMuteState === 'HOST_MUTED' ? 'muted host-muted' : 'muted')
+      : '';
+    const micTitle = locallyMuted ? 'Silenciado para você'
+      : flags.deafened ? 'Áudio desligado'
+      : flags.mic ? 'Microfone ligado'
+      : alvoMuteState === 'HOST_MUTED' ? 'Silenciado pelo host'
+      : alvoMuteState === 'SELF_MUTED' ? 'Silenciado pelo participante'
+      : 'Microfone desligado';
 
     const audioActive = state.audioActive.has(id);
 
@@ -2497,8 +2665,17 @@ function openPersonMenu(sessionId, anchor) {
       : `<button role="menuitem" data-act="mute">${ICONS.volumeOff}Silenciar para mim</button>`);
   }
     if (state.isHost) {
-      const alvoMudo = flagsOf(sessionId).mic === false;
-      items.push(`<button role="menuitem" data-act="admin-mute">${alvoMudo ? ICONS.mic : ICONS.micOff}${alvoMudo ? 'Deixar falar' : 'Silenciar microfone'}</button>`);
+      // Só o mute de origem HOST pode ser desfeito pelo host. SELF_MUTED
+      // pertence ao participante: a opção aparece desabilitada.
+      const alvo = state.participants.get(sessionId);
+      const alvoMute = alvo?.mute_state ?? alvo?.metadata?.mute_state ?? 'UNMUTED';
+      if (alvoMute === 'SELF_MUTED') {
+        items.push(`<button role="menuitem" data-act="admin-mute" disabled title="O participante silenciou o próprio microfone">${ICONS.micOff}Silenciado pelo participante</button>`);
+      } else if (alvoMute === 'HOST_MUTED') {
+        items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.mic}Deixar falar</button>`);
+      } else {
+        items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.micOff}Silenciar microfone</button>`);
+      }
       items.push(`<button role="menuitem" data-act="admin-camera" ${flags.camera ? '' : 'disabled'}>${ICONS.camera}Desligar câmera</button>`);
       items.push(`<button role="menuitem" data-act="admin-kick">${ICONS.headphonesOff}Expulsar da sala</button>`);
     }
@@ -2543,7 +2720,10 @@ function handleMenuClick(e) {
     return;
   }
   if (act === 'admin-mute') {
-    sendWebSocketMessage('admin-mute', { target_session_id: id, muted: flagsOf(id).mic !== false });
+    const alvo = state.participants.get(id);
+    const alvoMute = alvo?.mute_state ?? alvo?.metadata?.mute_state ?? 'UNMUTED';
+    // HOST_MUTED -> liberar; UNMUTED -> silenciar; SELF_MUTED fica bloqueado.
+    sendWebSocketMessage('admin-mute', { target_session_id: id, muted: alvoMute !== 'HOST_MUTED' });
     return;
   }
 
@@ -2634,6 +2814,8 @@ function sendChatMessage(e) {
   sendWebSocketMessage('chat-message', { message });
 
   elements.chatInput.value = '';
+  elements.chatInput.style.height = 'auto';
+  elements.chatInput.style.height = '42px';
 }
 
 // Notificações da sala (avisos no canto + sons) podem ser silenciadas pelo botão do sino
@@ -2734,7 +2916,7 @@ function appendChatMessage(data) {
   div.innerHTML = `
     <div class="chat-message-header">
       <div class="user-avatar chat-message-avatar" style="${escapeAttr(parts.style)}">${parts.html}</div>
-      <span class="chat-message-name">${escapeHtml(data.displayName)}${data.own ? ' (você)' : ''}</span>
+      <span class="chat-message-name">${escapeHtml(data.displayName)}</span>
       <span class="chat-message-time">${time}</span>
     </div>
     <div class="chat-message-content">${escapeHtml(data.content)}</div>

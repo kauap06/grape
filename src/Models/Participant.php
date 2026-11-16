@@ -46,6 +46,11 @@ class Participant
 
             $existing = self::findByRoomAndSession($roomId, $sessionId);
 
+            // O cliente manda só mídia (câmera, tela, ensurdecido). O mute é
+            // do servidor e vive no metadata: preserva o que já estava salvo
+            // para ele sobreviver a saída/reentrada na sala.
+            $metadata = array_merge($existing?->metadata ?? [], $metadata);
+
             // Já está ativo: só atualiza os dados
             if ($existing && $existing->isActive) {
                 $existing->update([
@@ -216,6 +221,9 @@ class Participant
             'avatar_data' => $this->avatarData,
             'is_active' => $this->isActive,
             'metadata' => $this->metadata,
+            // Origem do mute: UNMUTED | SELF_MUTED | HOST_MUTED (+ quem aplicou)
+            'mute_state' => $this->metadata['mute_state'] ?? 'UNMUTED',
+            'mute_by' => $this->metadata['mute_by'] ?? null,
         ];
     }
 }

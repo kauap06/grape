@@ -1,6 +1,6 @@
 /**
  * Grape - tema compartilhado (home + sala)
- * Remapeia os tokens semÃ¢nticos de main.css; os componentes nÃ£o usam cor fixa.
+ * Remapeia os tokens semânticos de main.css; os componentes não usam cor fixa.
  * Ative com <body class="theme-grape">.
  */
 
@@ -63,11 +63,11 @@
 }
 .deco-grapes { position: absolute; left: -2vw; bottom: -4vh; width: clamp(130px, 15vw, 240px); height: auto; filter: drop-shadow(0 8px 20px rgba(120, 60, 220, 0.35)); opacity: .9; }
 
-/* Cada blob tem duas animaÃ§Ãµes com duraÃ§Ãµes diferentes (movimento e forma):
-   o laÃ§o demora a se repetir e o movimento parece orgÃ¢nico.
-   Usa `transform` e `border-radius` (compatÃ­vel com qualquer navegador) e
-   NÃƒO Ã© desligado por prefers-reduced-motion; para parar, use a opÃ§Ã£o de
-   desativar animaÃ§Ãµes (body.no-animations). */
+/* Cada blob tem duas animações com durações diferentes (movimento e forma):
+   o laço demora a se repetir e o movimento parece orgânico.
+   Usa `transform` e `border-radius` (compatível com qualquer navegador) e
+   NÃO é desligado por prefers-reduced-motion; para parar, use a opção de
+   desativar animações (body.no-animations). */
 @keyframes blob-move {
   from { transform: translate3d(0, 0, 0) rotate(var(--rot-from)) scale(1); }
   to   { transform: translate3d(var(--dx), var(--dy), 0) rotate(var(--rot-to)) scale(var(--ds)); }
@@ -106,7 +106,7 @@
   animation-delay: -4s, -12s;
 }
 
-/* Uvas balanÃ§am de leve */
+/* Uvas balançam de leve */
 @keyframes grapes-sway {
   from { transform: rotate(-2deg) translateY(0); }
   to   { transform: rotate(2deg) translateY(-8px); }
@@ -116,12 +116,12 @@
   animation: grapes-sway 9s ease-in-out infinite alternate;
 }
 
-/* Na sala o fundo Ã© mais discreto para nÃ£o competir com o vÃ­deo */
+/* Na sala o fundo é mais discreto para não competir com o vídeo */
 .theme-room .deco { opacity: 0; }
 .theme-room .deco-grapes { display: none; }
 .theme-room .blob { animation: none !important; }
 
-/* ---------- BotÃµes, campos, modal e toast (compartilhados) ---------- */
+/* ---------- Botões, campos, modal e toast (compartilhados) ---------- */
 .theme-grape .btn { min-height: 44px; border-radius: var(--radius-md); padding: 0 var(--space-lg); }
 .theme-grape .btn svg { width: 18px; height: 18px; }
 .theme-grape .btn-primary {
@@ -143,7 +143,7 @@
 .theme-grape .modal { background: #100c1e; border: 1px solid var(--color-border-default); box-shadow: var(--shadow-lg); }
 .theme-grape .toast { background: #1a142e; border-color: var(--color-border-default); }
 
-/* Ãcones decorativos via CSS: os scripts trocam o conteÃºdo dos botÃµes (spinner/texto) */
+/* Ícones decorativos via CSS: os scripts trocam o conteúdo dos botões (spinner/texto) */
 .btn-arrow::after, .btn-create::before {
   content: ""; width: 20px; height: 20px; flex-shrink: 0;
   background: currentColor;
@@ -156,14 +156,14 @@
 
 /* ==========================================================================
   Modo compacto: visual minimalista.
-  Some com tudo que Ã© ornamento (blobs, uvas, gradientes, vidro, sombras) e
-  deixa sÃ³ superfÃ­cies chapadas, tipografia menor e espaÃ§amento apertado.
+  Some com tudo que é ornamento (blobs, uvas, gradientes, vidro, sombras) e
+  deixa só superfícies chapadas, tipografia menor e espaçamento apertado.
   ========================================================================== */
 body.is-compact {
   --min-bg: #0b0a0f;
   --min-surface: #131118;
   --min-line: #25222e;
-  /* Textos e bordas neutros: nada de lavanda do tema padrÃ£o */
+  /* Textos e bordas neutros: nada de lavanda do tema padrão */
   --color-text-primary: #e9e6f0;
   --color-text-secondary: #a6a1b2;
   --color-text-muted: #7d7889;
@@ -203,7 +203,7 @@ body.is-compact .logo { gap: 8px; }
 body.is-compact .header-content { padding-top: 12px; }
 body.is-compact .header-nav .btn { border-radius: var(--radius-md); }
 
-/* SuperfÃ­cies: chapadas, borda de 1px, canto pequeno */
+/* Superfícies: chapadas, borda de 1px, canto pequeno */
 body.is-compact .profile-card,
 body.is-compact .room-card,
 body.is-compact .tile,
@@ -215,7 +215,7 @@ body.is-compact .panel {
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 
-/* TÃ­tulos viram rÃ³tulos */
+/* Títulos viram rótulos */
 body.is-compact .section-title {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
@@ -259,7 +259,7 @@ body.is-compact .avatar-upload-btn {
   background: transparent;
 }
 
-/* PreferÃªncias e interruptor discretos */
+/* Preferências e interruptor discretos */
 body.is-compact .preferences-grid,
 body.is-compact .preference-switch {
   background: transparent;
@@ -267,7 +267,7 @@ body.is-compact .preference-switch {
   border-radius: var(--radius-md);
 }
 body.is-compact .preference-switch input:checked + .switch-track { box-shadow: none; }
-/* Interruptor compacto: trilho e botÃ£o proporcionais, folga de 2px nas bordas */
+/* Interruptor compacto: trilho e botão proporcionais, folga de 2px nas bordas */
 body.is-compact .preference-switch { gap: 8px; padding: 8px 10px; }
 
 body.is-compact .preference-switch input:checked + .switch-track .switch-thumb { transform: translateX(16px); }
@@ -276,7 +276,7 @@ body.is-compact .switch-thumb { width: 14px; height: 14px; top: 2px; left: 2px; 
 body.is-compact input:checked + .switch-track { background: var(--color-brand-1); border-color: #3a3547; }
 body.is-compact input:checked + .switch-track .switch-thumb { transform: translateX(16px); background: var(--color-accent-primary); }
 
-/* Modal, toast e divisor sÃ³brios */
+/* Modal, toast e divisor sóbrios */
 body.is-compact .modal { border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 body.is-compact .toast { border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
 body.is-compact .modal-overlay { background: rgba(4, 3, 7, 0.8); }
@@ -351,8 +351,8 @@ body.no-animations *::after {
 .switch-label small { color: var(--color-text-muted); font-size: var(--font-size-xs); line-height: 1.3; }
 
 /* ---------- Sala no modo compacto: tudo chapado ---------- */
-/* Os tokens da sala sÃ£o neutralizados na origem: some o roxo das bordas e
-  dos realces, e os componentes que os usam acompanham sem regra prÃ³pria. */
+/* Os tokens da sala são neutralizados na origem: some o roxo das bordas e
+  dos realces, e os componentes que os usam acompanham sem regra própria. */
 body.is-compact .room {
   --panel: #14121a;
   --panel-2: #191721;
@@ -371,7 +371,7 @@ body.is-compact .room {
   background: var(--min-bg);
 }
 
-/* SuperfÃ­cies sem sombra, vidro ou canto grande */
+/* Superfícies sem sombra, vidro ou canto grande */
 body.is-compact .stage-card,
 body.is-compact .stage,
 body.is-compact .pane,
@@ -390,7 +390,16 @@ body.is-compact .side-panel,
 body.is-compact .settings-body .profile-card,
 body.is-compact .dock { border-radius: var(--radius-md); }
 body.is-compact .pane,
-body.is-compact .chat-message-content { border-radius: var(--radius-sm); }
+body.is-compact .chat-message-content {
+  background: #271f47;
+  color: #f6f1ff;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+body.is-compact .chat-message.own .chat-message-content {
+  background: #3a3547;
+  color: #f6f1ff;
+}
 
 /* Controles retos e sem brilho */
 body.is-compact .icon-btn,
@@ -418,7 +427,7 @@ body.is-compact .dock-btn[aria-pressed="true"] { background: var(--min-line); }
 body.is-compact .dock-leave { background: var(--color-accent-danger); border-color: transparent; box-shadow: none; }
 body.is-compact .dock-leave:hover { background: var(--color-accent-danger-hover); }
 
-/* CabeÃ§alhos, abas e indicadores sem realce colorido */
+/* Cabeçalhos, abas e indicadores sem realce colorido */
 body.is-compact .stage-head,
 body.is-compact .side-head { background: transparent; border-color: var(--min-line); }
 body.is-compact .call-sub,
@@ -432,7 +441,7 @@ body.is-compact .live-pip,
 body.is-compact .dock-dot { box-shadow: none; }
 body.is-compact .live-pip { background: var(--live); }
 
-/* Aba ativa e item selecionado: apenas o traÃ§o neutro */
+/* Aba ativa e item selecionado: apenas o traço neutro */
 body.is-compact .view-tab[aria-selected="true"],
 body.is-compact .side-tab[aria-selected="true"] {
   color: var(--text);
@@ -446,12 +455,16 @@ body.is-compact .person.active {
   box-shadow: none;
 }
 
-/* Avatares: cor sÃ³lida no lugar do gradiente, mantendo o cÃ­rculo */
+/* Avatares: cor sólida no lugar do gradiente, mantendo o círculo */
 body.is-compact .user-avatar,
 body.is-compact .profile-avatar,
 body.is-compact .chat-message-avatar {
-  background: var(--min-line);
+  background: var(--color-accent-primary);
+  color: #fff;
   box-shadow: none;
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
 }
 body.is-compact .profile-avatar { border-radius: 50%; }
 
@@ -467,7 +480,7 @@ body.is-compact .switch-track { box-shadow: none; }
 body.is-compact .switch-track { border-radius: 6px; }
 body.is-compact .switch-thumb { border-radius: 4px; }
 
-/* Modal, toast e divisor sÃ³brios */
+/* Modal, toast e divisor sóbrios */
 body.is-compact .modal { border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 body.is-compact .toast { border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
 body.is-compact .modal-overlay { background: rgba(4, 3, 7, 0.8); }
@@ -484,15 +497,21 @@ body.is-compact .pane,
 body.is-compact .side-panel,
 body.is-compact .chat-message-content,
 body.is-compact .settings-body .profile-card {
-  background: var(--min-surface);
-  border-color: var(--min-line);
-  box-shadow: none;
+  background: #271f47;
+  color: #f6f1ff;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+body.is-compact .chat-message.own .chat-message-content {
+  background: #3a3547;
+  color: #f6f1ff;
 }
 body.is-compact .stage-card,
 body.is-compact .side-panel,
 body.is-compact .settings-body .profile-card { border-radius: var(--radius-md); }
-body.is-compact .pane,
-body.is-compact .chat-message-content { border-radius: var(--radius-sm); }
+body.is-compact .pane {
+  border-radius: var(--radius-sm);
+}
 
 /* Controles da sala: retos e sem brilho */
 body.is-compact .icon-btn,
@@ -510,7 +529,7 @@ body.is-compact .invite-btn:hover { background: var(--min-line); }
 body.is-compact .swatch { outline-offset: 2px; }
 body.is-compact .swatch.selected { outline-color: var(--color-accent-primary); box-shadow: none; }
 
-/* Modal de configuraÃ§Ãµes da sala */
+/* Modal de configurações da sala */
 body.is-compact .modal,
 body.is-compact .settings-tabs,
 body.is-compact .settings-tab { border-radius: var(--radius-md); box-shadow: none; }
@@ -518,10 +537,10 @@ body.is-compact .settings-tab.active { background: var(--min-line); }
 body.is-compact .settings-tab.active::after { display: none; }
 body.is-compact .menu { border-radius: var(--radius-md); box-shadow: none; }
 
-/* Tipografia e espaÃ§amento mais secos */
+/* Tipografia e espaçamento mais secos */
 body.is-compact .stage-head,
 body.is-compact .side-head { font-size: var(--font-size-xs); }
-body.is-compact .chat-message-avatar { width: 18px; height: 18px; font-size: 9px; }
+body.is-compact .chat-message-avatar { width: 18px; height: 18px; font-size: 9px; background: var(--color-accent-primary); color: #fff; }
 
 /* Botao de envio de foto do avatar (home e sala) */
 .page-home, .theme-room {

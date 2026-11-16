@@ -15,6 +15,13 @@ use GamingCalls\Models\Participant;
 
 class SignalingServer implements MessageComponentInterface
 {
+    /** Microfone aberto. */
+    public const MUTE_UNMUTED = 'UNMUTED';
+    /** O proprio participante silenciou o microfone. */
+    public const MUTE_SELF = 'SELF_MUTED';
+    /** O host silenciou o participante. */
+    public const MUTE_HOST = 'HOST_MUTED';
+
     /** @var ConnectionInterface[] */
     protected array $connections = [];
     
@@ -23,6 +30,15 @@ class SignalingServer implements MessageComponentInterface
     
     /** @var array<string, array{room_id: int, participant_id: int, session_id: string, metadata: array}> */
     protected array $connectionInfo = [];
+
+    /**
+     * Estado de mute autoritativo por sala/sessao: guarda a origem e quem aplicou.
+     * @var array<int, array<string, array{state: string, by: ?string}>>
+     */
+    protected array $muteStates = [];
+
+    /** @var array<int, int> Contador monotono por sala: descarta eventos fora de ordem */
+    protected array $muteSeq = [];
     
     /** @var array<int, array{last_ping: int, pong_received: bool}> */
     protected array $connectionHealth = [];
@@ -117,6 +133,9 @@ class SignalingServer implements MessageComponentInterface
                 case 'profile-update':
                     $this->handleProfileUpdate($from, $payload);
                     break;
+                case 'self-mute':
+                    $this->handleSelfMute($from, $payload);
+                    break;
                 // --- moderacao (somente host) ---
                 case 'admin-mute':
                     $this->handleAdminMute($from, $payload);
@@ -179,6 +198,9 @@ class SignalingServer implements MessageComponentInterface
         if (!is_array($metadata)) {
             $metadata = [];
         }
+        // O mute e do servidor: o cliente nao pode definir o proprio estado
+        // no join (seria uma forma de escapar de um mute do host).
+        unset($metadata['mute_state'], $metadata['mute_by']);
         $displayName = (string) $displayName;
 
         // Avatar maior que a coluna faria o INSERT falhar (SQLSTATE 22001 / 1406)
@@ -207,7 +229,8 @@ class SignalingServer implements MessageComponentInterface
             return;
         }
 
-        // Create or update participant
+        // Create or update participant (o metadata anterior e preservado:
+        // dele vem o mute salvo que sobrevive a saida/reentrada).
         $participant = Participant::create($room->id, $sessionId, $displayName, $avatarData, $metadata);
         
         // Store connection info
@@ -221,6 +244,40 @@ class SignalingServer implements MessageComponentInterface
             'metadata' => $metadata,
             'is_host' => $isHost,
         ];
+
+        // Restaura o mute anterior (sobrevive a reconexao). SELF_MUTED e
+        // HOST_MUTED continuam valendo ate o participante voltar e agir.
+        $restoredMute = $this->muteStateOf($room->id, (string) $sessionId);
+        if ($restoredMute === self::MUTE_UNMUTED && !empty($participant->metadata['mute_state'])) {
+            $restoredMute = (string) $participant->metadata['mute_state'];
+            $this->muteStates[$room->id][(string) $sessionId] = [
+                'state' => $restoredMute,
+                'by' => $participant->metadata['mute_by'] ?? null,
+            ];
+        }
+        // Sala nova/limpa: garante entrada no mapa para o host tambem
+        if (!isset($this->muteStates[$room->id][(string) $sessionId])) {
+            $this->muteStates[$room->id][(string) $sessionId] = ['state' => self::MUTE_UNMUTED, 'by' => null];
+        }
+
+        // O join manda o metadata de midia antes do getUserMedia, entao
+        // `microphoneMuted` pode nao refletir o mute restaurado. A lista de
+        // participantes usa esses campos antes do primeiro media-state:
+        // deixa o registro coerente com o estado autoritativo.
+        $muteBy = $this->muteStates[$room->id][(string) $sessionId]['by'] ?? null;
+        if (($participant->metadata['mute_state'] ?? null) !== $restoredMute
+            || ($participant->metadata['microphoneMuted'] ?? false) !== ($restoredMute !== self::MUTE_UNMUTED)) {
+            try {
+                $participant->updateMetadata([
+                    'mute_state' => $restoredMute,
+                    'mute_by' => $muteBy,
+                    'microphoneMuted' => $restoredMute !== self::MUTE_UNMUTED,
+                ]);
+            } catch (\Throwable $e) {
+                // Nao impede a entrada: o estado em memoria ja esta correto.
+                error_log("Falha ao sincronizar metadata de mute de {$sessionId}: " . $e->getMessage());
+            }
+        }
 
         // Add to room connections
         if (!isset($this->roomConnections[$room->id])) {
@@ -248,6 +305,9 @@ class SignalingServer implements MessageComponentInterface
                 'is_host' => $isHost,
                 'creator_session_id' => $room->creatorSessionId,
                 'is_locked' => $room->isLocked,
+                'mute_state' => $restoredMute,
+                'mute_by' => $this->muteStates[$room->id][(string) $sessionId]['by'] ?? null,
+                'mute_seq' => $this->muteSeq[$room->id] ?? 0,
             ],
         ]);
 
@@ -298,6 +358,12 @@ class SignalingServer implements MessageComponentInterface
         if (!$info) {
             return;
         }
+
+        // O mute e do servidor: o cliente so reporta camera/tela/ensurdecido.
+        // Assim um media-state atrasado nao desfaz um mute de host.
+        $muteState = $this->muteStateOf((int) $info['room_id'], (string) $info['session_id']);
+        $payload['microphoneMuted'] = $muteState !== self::MUTE_UNMUTED;
+        $payload['mute_state'] = $muteState;
 
         // Update participant metadata
         $participant = Participant::findById($info['participant_id']);
@@ -473,13 +539,271 @@ class SignalingServer implements MessageComponentInterface
         return (int) $info['room_id'];
     }
 
+    // ========================================================================
+    // Estado de mute: fonte unica de verdade.
+    //
+    // Cada participante esta em UNMUTED, SELF_MUTED ou HOST_MUTED. O mute
+    // guarda a origem (quem aplicou), e toda transicao passa por
+    // applyMuteTransition(), que valida a autorizacao ANTES de mudar o estado.
+    // Transicao negada nao altera nada e devolve erro a quem pediu.
+    //
+    //   estado        acao           autorizado      novo estado
+    //   UNMUTED       mute-self      o proprio       SELF_MUTED
+    //   SELF_MUTED    unmute-self    o proprio       UNMUTED
+    //   HOST_MUTED    unmute-self    o proprio       UNMUTED
+    //   UNMUTED       host-mute      host            HOST_MUTED
+    //   HOST_MUTED    host-unmute    host            UNMUTED
+    //
+    // Negadas: host/admin nao removem SELF_MUTED; participante nao mexe no
+    // mute de outro; admin (nao-host) nao remove mute nenhum.
+    // ========================================================================
 
+    /**
+     * Estado de mute atual de uma sessao na sala (UNMUTED quando desconhecido).
+     */
+    protected function muteStateOf(int $roomId, string $sessionId): string
+    {
+        return $this->muteStates[$roomId][$sessionId]['state'] ?? self::MUTE_UNMUTED;
+    }
+
+    /**
+     * Aplica uma transicao de mute com validacao.
+     *
+     * @param string $action mute-self | unmute-self | host-mute | host-unmute
+     * @param string $role   host | admin | participant
+     * @return array{ok: bool, reason?: string, state: string, by: ?string, changed: bool}
+     */
+    protected function applyMuteTransition(
+        int $roomId,
+        string $targetSession,
+        string $action,
+        string $actorSession,
+        string $role
+    ): array {
+        $current = $this->muteStateOf($roomId, $targetSession);
+        $isSelf = $actorSession === $targetSession;
+        $isHost = $role === 'host';
+        $isAdmin = $role === 'admin';
+
+        // Autorizacao por acao
+        if ($action === 'mute-self' || $action === 'unmute-self') {
+            if (!$isSelf) {
+                return $this->muteReject($roomId, $targetSession, 'NOT_SELF',
+                    'Only the participant can change their own mute');
+            }
+        } elseif ($action === 'host-mute' || $action === 'host-unmute') {
+            if (!$isHost) {
+                // Admin existe no vocabulario do dominio, mas hoje so o host modera
+                return $this->muteReject($roomId, $targetSession,
+                    $isAdmin ? 'ADMIN_CANNOT_UNMUTE' : 'NOT_HOST',
+                    $isAdmin ? 'Only the host can change another participant mute'
+                             : 'Only the room host can do this');
+            }
+        } else {
+            return $this->muteReject($roomId, $targetSession, 'INVALID_ACTION', 'Unknown mute action');
+        }
+
+        // Transicao de estado
+        $next = $current;
+        $by = $this->muteStates[$roomId][$targetSession]['by'] ?? null;
+
+        switch ($action) {
+            case 'mute-self':
+                // So sai de UNMUTED. Se ja e SELF_MUTED, idempotente.
+                if ($current === self::MUTE_UNMUTED) {
+                    $next = self::MUTE_SELF;
+                    $by = $actorSession;
+                } elseif ($current === self::MUTE_HOST) {
+                    // Host ja o silenciou e ele nao reabre: continua HOST_MUTED.
+                    // A origem do host e preservada (o host ainda pode liberar).
+                    $next = self::MUTE_HOST;
+                }
+                break;
+
+            case 'unmute-self':
+                // O participante sempre remove o proprio mute, de qualquer origem.
+                $next = self::MUTE_UNMUTED;
+                $by = null;
+                break;
+
+            case 'host-mute':
+                if ($current === self::MUTE_SELF) {
+                    return $this->muteReject($roomId, $targetSession, 'SELF_MUTED',
+                        'Participant muted themselves; the host cannot remove that');
+                }
+                if ($current === self::MUTE_UNMUTED) {
+                    $next = self::MUTE_HOST;
+                    $by = $actorSession;
+                }
+                break;
+
+            case 'host-unmute':
+                if ($current === self::MUTE_SELF) {
+                    return $this->muteReject($roomId, $targetSession, 'SELF_MUTED',
+                        'Participant muted themselves; only they can unmute');
+                }
+                if ($current === self::MUTE_HOST) {
+                    $next = self::MUTE_UNMUTED;
+                    $by = null;
+                }
+                break;
+        }
+
+        $changed = $next !== $current;
+        if ($changed) {
+            $this->muteStates[$roomId][$targetSession] = ['state' => $next, 'by' => $by];
+        }
+
+        return [
+            'ok' => true,
+            'state' => $next,
+            'by' => $by,
+            'changed' => $changed,
+        ];
+    }
+
+    /**
+     * Monta a resposta de transicao negada (sem alterar o estado atual).
+     */
+    protected function muteReject(int $roomId, string $sessionId, string $code, string $message): array
+    {
+        $entry = $this->muteStates[$roomId][$sessionId] ?? null;
+        return [
+            'ok' => false,
+            'reason' => $code,
+            'message' => $message,
+            'state' => $entry['state'] ?? self::MUTE_UNMUTED,
+            'by' => $entry['by'] ?? null,
+            'changed' => false,
+        ];
+    }
+
+    /**
+     * Publica o estado de mute para a sala inteira e para o alvo, com um
+     * numero de sequencia que o cliente usa para descartar eventos repetidos
+     * ou fora de ordem.
+     */
+    protected function publishMuteState(
+        int $roomId,
+        string $sessionId,
+        string $state,
+        ?string $by,
+        string $cause
+    ): void {
+        $seq = ($this->muteSeq[$roomId] ?? 0) + 1;
+        $this->muteSeq[$roomId] = $seq;
+
+        $payload = [
+            'session_id' => $sessionId,
+            'state' => $state,
+            'by' => $by,
+            'cause' => $cause, // self | host | sync
+            'seq' => $seq,
+        ];
+
+        // Todos recebem, inclusive o alvo (que ajusta o proprio microfone).
+        $this->broadcastToRoom($roomId, ['type' => 'mute-state', 'payload' => $payload]);
+
+        // Persiste para sobreviver a reconexao do participante.
+        $this->persistMuteState($roomId, $sessionId, $state, $by);
+    }
+
+    /**
+     * Guarda o mute no metadata do participante (restaurado no rejoin).
+     */
+    protected function persistMuteState(int $roomId, string $sessionId, string $state, ?string $by): void
+    {
+        $participant = Participant::findByRoomAndSession($roomId, $sessionId);
+        if (!$participant) {
+            return;
+        }
+        try {
+            $participant->updateMetadata([
+                'mute_state' => $state,
+                'mute_by' => $by,
+                'microphoneMuted' => $state !== self::MUTE_UNMUTED,
+            ]);
+        } catch (\Throwable $e) {
+            error_log("Falha ao persistir mute de {$sessionId}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Papel do ator na sala (host | admin | participant).
+     */
+    protected function roleOf(ConnectionInterface $conn): string
+    {
+        $info = $this->connectionInfo[$conn->resourceId] ?? null;
+        if (!$info) {
+            return 'participant';
+        }
+        return empty($info['is_host']) ? 'participant' : 'host';
+    }
+
+    /**
+     * Evento do proprio participante abrindo/fechando o microfone.
+     */
+    protected function handleSelfMute(ConnectionInterface $from, array $payload): void
+    {
+        $info = $this->connectionInfo[$from->resourceId] ?? null;
+        if (!$info) {
+            $this->sendError($from, 'NOT_IN_ROOM', 'Join a room first');
+            return;
+        }
+
+        $roomId = (int) $info['room_id'];
+        $sessionId = (string) $info['session_id'];
+        $muted = (bool) ($payload['muted'] ?? true);
+        $action = $muted ? 'mute-self' : 'unmute-self';
+
+        $result = $this->applyMuteTransition($roomId, $sessionId, $action, $sessionId, $this->roleOf($from));
+
+        if (!$result['ok']) {
+            $this->sendError($from, (string) $result['reason'], (string) ($result['message'] ?? 'Mute rejected'));
+            // Reafirma o estado atual para o cliente voltar ao que o servidor manda.
+            $this->send($from, [
+                'type' => 'mute-state',
+                'payload' => [
+                    'session_id' => $sessionId,
+                    'state' => $result['state'],
+                    'by' => $result['by'],
+                    'cause' => 'sync',
+                    'seq' => $this->muteSeq[$roomId] ?? 0,
+                ],
+            ]);
+            return;
+        }
+
+        if ($result['changed']) {
+            $this->publishMuteState($roomId, $sessionId, (string) $result['state'], $result['by'], 'self');
+        } else {
+            // Sem mudanca (ex.: tentou mutar estando HOST_MUTED): confirma o
+            // estado autoritativo para o cliente desfazer o otimista.
+            $this->send($from, [
+                'type' => 'mute-state',
+                'payload' => [
+                    'session_id' => $sessionId,
+                    'state' => $result['state'],
+                    'by' => $result['by'],
+                    'cause' => 'sync',
+                    'seq' => $this->muteSeq[$roomId] ?? 0,
+                ],
+            ]);
+        }
+    }
+
+
+    /**
+     * Host silencia / libera o microfone de outro participante.
+     * Rejeita quando o mute foi aplicado pelo proprio participante.
+     */
     protected function handleAdminMute(ConnectionInterface $from, array $payload): void
     {
         $roomId = $this->requireHost($from);
         if ($roomId === null) {
             return;
         }
+
         $targetSession = (string) ($payload['target_session_id'] ?? '');
         $muted = (bool) ($payload['muted'] ?? true);
         if ($targetSession === '') {
@@ -494,15 +818,41 @@ class SignalingServer implements MessageComponentInterface
             return;
         }
 
-        $this->send($target, [
-            'type' => 'admin-muted',
-            'payload' => ['muted' => $muted, 'by' => $this->connectionInfo[$from->resourceId]['session_id']],
-        ]);
-        // Espelha para todos: o indicador de microfone na lista precisa refletir
-        $this->broadcastToRoom($roomId, [
-            'type' => 'admin-muted',
-            'payload' => ['session_id' => $targetSession, 'muted' => $muted],
-        ], $target->resourceId);
+        $actorSession = (string) $this->connectionInfo[$from->resourceId]['session_id'];
+        $action = $muted ? 'host-mute' : 'host-unmute';
+
+        $result = $this->applyMuteTransition($roomId, $targetSession, $action, $actorSession, $this->roleOf($from));
+
+        if (!$result['ok']) {
+            $this->sendError($from, (string) $result['reason'], (string) ($result['message'] ?? 'Mute rejected'));
+            // Devolve o estado real para o host reverter a interface.
+            $this->send($from, [
+                'type' => 'mute-state',
+                'payload' => [
+                    'session_id' => $targetSession,
+                    'state' => $result['state'],
+                    'by' => $result['by'],
+                    'cause' => 'sync',
+                    'seq' => $this->muteSeq[$roomId] ?? 0,
+                ],
+            ]);
+            return;
+        }
+
+        if ($result['changed']) {
+            $this->publishMuteState($roomId, $targetSession, (string) $result['state'], $result['by'], 'host');
+        } else {
+            $this->send($from, [
+                'type' => 'mute-state',
+                'payload' => [
+                    'session_id' => $targetSession,
+                    'state' => $result['state'],
+                    'by' => $result['by'],
+                    'cause' => 'sync',
+                    'seq' => $this->muteSeq[$roomId] ?? 0,
+                ],
+            ]);
+        }
     }
 
     protected function handleAdminCamera(ConnectionInterface $from, array $payload): void
@@ -590,7 +940,8 @@ class SignalingServer implements MessageComponentInterface
         if ($roomId === null) {
             return;
         }
-        $hostSession = $this->connectionInfo[$from->resourceId]['session_id'];
+        $hostSession = (string) $this->connectionInfo[$from->resourceId]['session_id'];
+        $role = $this->roleOf($from);
         $muted = 0;
 
         foreach ($this->roomConnections[$roomId] ?? [] as $conn) {
@@ -598,7 +949,17 @@ class SignalingServer implements MessageComponentInterface
             if (!$info || $info['session_id'] === $hostSession) {
                 continue; // nao silencia o proprio host
             }
-            $this->send($conn, ['type' => 'admin-muted', 'payload' => ['muted' => true, 'by' => $hostSession]]);
+
+            // Passa pela mesma maquina de estados: quem ja esta SELF_MUTED
+            // continua SELF_MUTED (o host nao pode remover esse mute).
+            $result = $this->applyMuteTransition(
+                $roomId, (string) $info['session_id'], 'host-mute', $hostSession, $role
+            );
+            if (!$result['ok'] || !$result['changed']) {
+                continue;
+            }
+            $this->publishMuteState($roomId, (string) $info['session_id'],
+                (string) $result['state'], $result['by'], 'host');
             $muted++;
         }
 

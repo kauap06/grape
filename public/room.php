@@ -130,7 +130,7 @@ $prefsJson = json_encode(
             <section class="side-panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
                 <div class="chat-messages" id="chat-messages"></div>
                 <form class="chat-form" id="chat-form" autocomplete="off">
-                    <input type="text" class="chat-input" id="chat-input" placeholder="Digite uma mensagem..." maxlength="500">
+                    <textarea class="chat-input" id="chat-input" placeholder="Digite uma mensagem..." maxlength="500" rows="1"></textarea>
                     <button type="submit" class="icon-btn chat-send" aria-label="Enviar">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     </button>
