@@ -46,16 +46,16 @@
   --space-2xl: 48px;
 
   /* Border Radius */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
 
-  /* Shadows (quase nenhuma) */
-  --shadow-sm: none;
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /* Shadows (suaves, com desfoque e deslocamento) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 28px -10px rgba(0, 0, 0, 0.5);
 
   /* Transitions */
   --transition-fast: 100ms ease;
@@ -142,8 +142,6 @@ body {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
-
-/* Links */
 a {
   color: var(--color-text-primary);
   text-decoration: underline;
@@ -162,10 +160,10 @@ a:hover { color: #fff; }
   font-size: 14px;
   font-weight: var(--font-weight-medium);
   line-height: 1.2;
-  border: none;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   white-space: nowrap;
   text-decoration: none;
 }
@@ -188,6 +186,9 @@ a:hover { color: #fff; }
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-accent-primary-hover);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
 }
 .btn-secondary {
   background: var(--color-bg-tertiary);
@@ -358,10 +359,18 @@ a:hover { color: #fff; }
   justify-content: space-between;
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-border-subtle);
+  overflow: hidden;
 }
 .modal-header h2 {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .modal-close {
   display: flex;
@@ -369,6 +378,7 @@ a:hover { color: #fff; }
   justify-content: center;
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   border-radius: var(--radius-full);
   background: transparent;
   border: none;
@@ -418,47 +428,45 @@ a:hover { color: #fff; }
   right: var(--space-lg);
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: var(--space-md);
   z-index: var(--z-toast);
   pointer-events: none;
 }
+
 .toast {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-md);
-  padding-right: 32px;
+  width: min(380px, calc(100vw - 2 * var(--space-lg)));
+  padding: var(--space-md) 44px var(--space-md) var(--space-md);
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
   animation: slideIn 0.2s ease;
-  width: 340px;
-  height: 80px;
   overflow: hidden;
   flex-shrink: 0;
-  position: relative;
 }
-.toast-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  object-fit: cover;
-  flex-shrink: 0;
-  background: var(--color-bg-active);
+.toast-exit {
+  animation: slideOut 0.2s ease forwards;
 }
-.toast-avatar-gradient {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-}
+
+.toast-avatar,
+.toast-avatar-gradient,
 .toast-avatar-initials {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
+}
+.toast-avatar {
+  object-fit: cover;
+  background: var(--color-bg-active);
+}
+.toast-avatar-initials {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -466,11 +474,45 @@ a:hover { color: #fff; }
   font-weight: var(--font-weight-semibold);
   color: #fff;
 }
-.toast-content {
-  flex: 1;
+
+/* Coluna de texto: pega só o espaço que sobra (sem empurrar o X) */
+.toast-message {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: 1.35;
 }
+
+/* Título, corpo e mensagem simples: uma linha, terminando em "..." */
+.toast-title,
+.toast-body,
+.toast-content {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.toast-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+.toast-body {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+.toast-content {
+  color: var(--color-text-secondary);
+}
+/* Sem título, a mensagem é o texto principal */
+.toast-message > .toast-content:only-child {
+  color: var(--color-text-primary);
+}
+
 .toast-close {
   position: absolute;
   top: var(--space-sm);
@@ -486,28 +528,6 @@ a:hover { color: #fff; }
 .toast-close:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
-}
-.toast-message {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.toast-title {
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
-.toast-body {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 300px;
 }
 
 /* Animations */
@@ -525,9 +545,48 @@ a:hover { color: #fff; }
     transform: translateY(0);
   }
 }
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Reduced motion — respeita preferência do sistema */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Utility Classes */

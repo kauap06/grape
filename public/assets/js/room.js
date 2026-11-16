@@ -2458,7 +2458,10 @@ function renderParticipants() {
         <button class="person-main" type="button" data-select="${escapeAttr(id)}" aria-current="${active}">
           ${avatarHtml(p)}
           <span class="person-text">
-            <span class="person-name">${escapeHtml(p.display_name || 'Jogador')}${p.session_id === state.hostSessionId ? ' <span class="host-badge" title="Anfitrião">host</span>' : ''}${isSelf ? ' (você)' : ''}</span>
+            <span class="person-name-row">
+              <span class="person-name">${escapeHtml(p.display_name || 'Jogador')}${isSelf ? ' (você)' : ''}</span>
+              ${p.session_id === state.hostSessionId ? '<span class="host-badge" title="Anfitrião">host</span>' : ''}
+            </span>
             <span class="person-sub ${live ? 'is-live' : ''}">${sub}</span>
           </span>
         </button>
@@ -2707,7 +2710,7 @@ function handleChatMessage(payload) {
 
   // Notificação toast de nova mensagem (exibe remetente, foto e conteúdo truncado)
   if (!isOwn) {
-    const truncated = message.length > 60 ? message.slice(0, 60) + '…' : message;
+    const truncated = message.length > 100 ? message.slice(0, 100) + '…' : message;
     notifyRoom(truncated, 8000, { title: displayName || 'Participante', avatar: avatarData });
     playNotificationSound();
   }
