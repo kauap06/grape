@@ -107,7 +107,7 @@ $prefsJson = json_encode(
             <div class="side-tabs" role="tablist" aria-label="Painel lateral">
                 <button class="side-tab active" role="tab" id="tab-people" data-panel="people" aria-selected="true" aria-controls="panel-people">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    <span>Participantes (<span id="participant-count-value">0</span>)</span>
+                    <span>Pessoas (<span id="participant-count-value">0</span>)</span>
                 </button>
                 <button class="side-tab" role="tab" id="tab-chat" data-panel="chat" aria-selected="false" aria-controls="panel-chat">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -142,7 +142,7 @@ $prefsJson = json_encode(
         <!-- ============ Palco: o que o participante selecionado transmite ============ -->
         <main class="stage-card" id="stage-card">
             <header class="stage-head">
-                <button class="icon-btn side-toggle" id="side-toggle" aria-label="Participantes" title="Participantes">
+                <button class="icon-btn side-toggle" id="side-toggle" aria-label="Pessoas" title="Pessoas">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </button>
 
@@ -162,9 +162,9 @@ $prefsJson = json_encode(
                         Tela
                         <i class="live-pip" aria-hidden="true"></i>
                     </button>
-                    <button class="view-tab" role="tab" id="view-tab-grid" data-view="grid" aria-selected="false" aria-label="Todos os participantes" title="Todos os participantes">
+                    <button class="view-tab" role="tab" id="view-tab-grid" data-view="grid" aria-selected="false" aria-label="Todos" title="Ver todos">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-                        <span class="view-tab-label">Participantes</span>
+                        <span class="view-tab-label">Todos</span>
                     </button>
                 </div>
 
@@ -197,9 +197,9 @@ $prefsJson = json_encode(
                 <button type="button" class="cam-restore" id="cam-restore" data-action="show-camera" aria-label="Mostrar câmera" title="Mostrar câmera" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                 </button>
-                <div class="stage-grid" id="stage-grid" aria-label="Participantes"></div>
+                <div class="stage-grid" id="stage-grid" aria-label="Pessoas"></div>
                 <div class="stage-none" id="stage-none">
-                    <p>Selecione um participante.</p>
+                    <p>Selecione uma pessoa.</p>
                 </div>
             </div>
             <div class="stage-detached" id="stage-detached" hidden>

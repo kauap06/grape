@@ -167,20 +167,33 @@ body.is-compact .room-code { border-radius: 6px; }
   font-weight: var(--font-weight-medium);
   color: var(--text-3);
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
-.side-tab svg { width: 16px; height: 16px; }
+.side-tab svg { width: 16px; height: 16px; transition: transform 0.18s ease; }
 .side-tab:hover { color: var(--text-2); }
 .side-tab.active { color: var(--text); }
-.side-tab.active::after {
+.side-tab.active svg { transform: scale(1.08); }
+
+/* Indicador das abas: cresce do centro ao ativar */
+.side-tab::after,
+.view-tab::after {
   content: '';
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: -1px;
   height: 2px;
   border-radius: 2px;
   background: var(--accent);
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.side-tab::after { bottom: -1px; }
+.view-tab::after { bottom: -9px; }
+.side-tab.active::after,
+.view-tab[aria-selected="true"]::after {
+  transform: scaleX(1);
+  opacity: 1;
 }
 
 .side-panel {
@@ -212,7 +225,7 @@ body.is-compact .room-code { border-radius: 6px; }
   align-items: center;
   border-radius: var(--radius-md);
   transition: background var(--transition-fast);
-  animation: fadeInUp 0.25s ease-out both;
+  /* Sem animação de entrada: a lista é re-renderizada a cada mudança */
   cursor: default;
 }
 .person:hover { background: rgba(255, 255, 255, 0.02); }
@@ -328,7 +341,11 @@ body.is-compact .room-code { border-radius: 6px; }
   flex-direction: column;
   gap: 12px;
 }
-.chat-message { display: flex; flex-direction: column; max-width: 75%; }
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 75%;
+}
 .chat-message.own { align-self: flex-end; }
 .chat-message-header {
   display: flex;
@@ -581,21 +598,12 @@ body.is-compact .viewing .user-avatar.is-stack > .user-avatar {
   font-weight: var(--font-weight-medium);
   color: var(--text-3);
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
-.view-tab svg { width: 16px; height: 16px; }
+.view-tab svg { width: 16px; height: 16px; transition: transform 0.18s ease; }
 .view-tab:hover { color: var(--text-2); }
 .view-tab[aria-selected="true"] { color: var(--text); }
-.view-tab[aria-selected="true"]::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -9px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
+.view-tab[aria-selected="true"] svg { transform: scale(1.08); }
 .live-pip {
   display: none;
   width: 6px;
@@ -1320,8 +1328,7 @@ body.is-compact .viewing .user-avatar.is-stack > .user-avatar {
 
 .settings-body { flex: 1; min-height: 0; overflow-y: auto; }
 .settings-panel { display: none; }
-.settings-panel.active { display: block; animation: settings-fade .18s ease; }
-@keyframes settings-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.settings-panel.active { display: block; }
 
 .settings-group { margin-bottom: 20px; }
 .settings-group:last-child { margin-bottom: 0; }
@@ -1460,10 +1467,6 @@ body.is-compact .viewing .user-avatar.is-stack > .user-avatar {
   .settings-tab svg { display: none; }
   .settings-tab span { font-size: 13px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .settings-panel.active { animation: none; }
-}
-
 /* ============================================
    Aba "Participantes" (visão em blocos)
    ============================================ */

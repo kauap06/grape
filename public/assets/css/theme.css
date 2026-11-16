@@ -455,16 +455,14 @@ body.is-compact .person.active {
   box-shadow: none;
 }
 
-/* Avatares: cor sólida no lugar do gradiente, mantendo o círculo */
+/* Avatares: cor sólida no lugar do gradiente, mantendo o círculo e o
+   tamanho do modo normal */
 body.is-compact .user-avatar,
 body.is-compact .profile-avatar,
 body.is-compact .chat-message-avatar {
   background: var(--color-accent-primary);
   color: #fff;
   box-shadow: none;
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
 }
 body.is-compact .profile-avatar { border-radius: 50%; }
 
@@ -540,7 +538,7 @@ body.is-compact .menu { border-radius: var(--radius-md); box-shadow: none; }
 /* Tipografia e espaçamento mais secos */
 body.is-compact .stage-head,
 body.is-compact .side-head { font-size: var(--font-size-xs); }
-body.is-compact .chat-message-avatar { width: 18px; height: 18px; font-size: 9px; background: var(--color-accent-primary); color: #fff; }
+body.is-compact .chat-message-avatar { background: var(--color-accent-primary); color: #fff; }
 
 /* Botao de envio de foto do avatar (home e sala) */
 .page-home, .theme-room {

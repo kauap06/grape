@@ -170,7 +170,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Modo compacto escolhido na home (ou aqui): aplica o visual minimalista
   // também nesta tela, que compartilha a mesma chave de preferência.
   const uiPrefs = Storage.get('uiPreferences', {});
-  setCompactMode(!!uiPrefs.compactMode, true);
   state.displayName = ((profile.displayName || state.displayName || '').trim()) || 'Jogador';
   state.avatar = serializeAvatar(profile.avatar) || state.avatar;
   state.view.split = !!Storage.get('roomView', {}).split;
@@ -178,6 +177,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (savedPos && isFinite(savedPos.x) && isFinite(savedPos.y)) state.camPos = savedPos;
 
   cacheElements();
+  // Depois de cacheElements: aplica o visual e deixa o interruptor no mesmo
+  // estado (antes disso o checkbox ainda não existia e ficava dessincronizado).
+  setCompactMode(!!uiPrefs.compactMode, true);
   loadSettings();
   setupEventListeners();
   setupMediaSession();
@@ -675,6 +677,10 @@ const profileDraft = { name: '', avatar: null }; // avatar: objeto {type:'gradie
 
 function openSettings(tab = 'profile') {
   resetProfileDraft();
+  // O interruptor sempre reflete o que está aplicado na tela.
+  if (elements.compactMode) {
+    elements.compactMode.checked = document.body.classList.contains('is-compact');
+  }
   switchSettingsTab(tab);
   Modal.open('settings-modal');
 }
@@ -2207,7 +2213,7 @@ function renderStage() {
   syncCamResizeAvailability();
 
   if (grid) {
-    elements.viewingName.textContent = 'Todos os participantes';
+    elements.viewingName.textContent = 'Todos';
     if (popout.nameEl) popout.nameEl.textContent = elements.viewingName.textContent;
     renderGroupAvatar();
     elements.viewingAvatar.classList.remove('audio-active');
@@ -2962,6 +2968,15 @@ function appendChatMessage(data) {
 
   elements.chatMessages.appendChild(div);
   elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+
+  // Animação de entrada só desta mensagem (roda uma vez, não repete ao
+  // trocar de aba como um @keyframes em CSS faria).
+  if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    div.animate(
+      [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 180, easing: 'ease-out' }
+    );
+  }
 }
 
 // ============================================
@@ -2983,7 +2998,7 @@ function togglePopout() {
 async function openPopout() {
   if (popout.mode) return;
   if (!state.view.sessionId) {
-    Toast.info('Selecione um participante');
+    Toast.info('Selecione uma pessoa');
     return;
   }
 
