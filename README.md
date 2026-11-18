@@ -10,8 +10,9 @@ Designed for **local hosting through Radmin VPN**: one computer hosts the room, 
 
 - **Voice & Video Calls**: Low-latency WebRTC communication for every participant (not just the room creator)
 - **Screen Sharing**: Share entire screen, application window, or browser tab; visible to all participants
+- **Multi Screen**: watch up to **4 screen shares at once** in a 16:9 gallery with dedicated layouts for 1, 2, 3 and 4 screens. Double-click a tile for a focused view; click a participant's tag to open their individual screen tab. Removing a tile never stops that participant's actual share
 - **Host Moderation**: the room creator can mute/unmute a participant, force their camera off and remove them from the room (per-participant menu), plus a "mute all" button in the participant list — every command is validated server-side
-- **Sound Notifications**: join, leave, chat message, live-end and screen-share cues at reduced volume, all honoring the room's notification mute
+- **Custom Sound Notifications**: customize the **join, leave, mute, unmute and screen-share** cues from the home page (music button next to settings). Preview, upload or remove each sound (up to 5 MB); removing restores the default. Custom audio is stored **locally in the browser** (IndexedDB), never uploaded to the server, and the room applies it automatically. All cues play at reduced volume and honor the room's notification mute
 - **Compact Mode**: optional minimalist redesign (flat surfaces, no gradients/glass/shadows) applied to the home and the call room, remembered per browser
 - **Resizable Floating Camera**: while watching a screen share the camera becomes a draggable PiP window, resizable from all four corners keeping 16:9, closable, with persisted size
 - **Room Code**: shown next to the room name in the header; one click copies it
@@ -323,8 +324,16 @@ Full startup guide: [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md).
 - Room code badge next to the room name in the header — click to copy.
 - `rooms.is_locked` column added (server-side capability for future "lock room" UI).
 
+**Multi Screen**
+- Up to 4 simultaneous screen shares in an adaptive 16:9 gallery: 1 centered, 2 side-by-side, 3 as 2 + 1, and 4 in a strict 2×2 grid, with no scroll or overflow.
+- Compact **Add Screen** button in the bottom-right corner opens a live picker of participants currently sharing; it is limited to 4 screens.
+- Double-click a tile for focus mode (~57% of the viewport width, dark backdrop, `Esc` or click outside to close); the gallery geometry is restored exactly.
+- The participant tag on each tile opens that participant's individual screen tab. Removing a tile only removes it from the gallery — the real share keeps running.
+
 **Sound design**
-- New cues wired to actions: `join.mp3` (everyone, including the joiner), `exit-call.mp3` (whoever stays), `live-close.mp3` (only people watching that participant's tab), `message.mp3` (chat, replacing `notification.mp3`), `screen.mp3` (share start).
+- Customizable cues on the home page: `join.mp3`, `exit-call.mp3`, `mute.wav`, `unmute.wav` and `screen.mp3` (share start); `live-close.mp3` (share end) and `message.mp3` (chat) keep their defaults.
+- Each sound can be previewed, replaced with an audio file up to 5 MB, or removed to restore the default; uploads are validated before being saved.
+- Custom audio lives only in this browser's **IndexedDB** (`grape_room_sounds`) and is shared by the home page and the room on the same origin; it is not sent to the server or synced to other devices.
 - All cues play at 35% volume and respect the room's notification mute.
 
 **Interface**
@@ -334,7 +343,7 @@ Full startup guide: [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md).
 
 **Data & preferences**
 - Preferences now persist server-side per browser (`grape_pref` cookie + `user_preferences` table), localStorage first; the avatar color palette was removed (solid default).
-- "Apagar meus dados" (red button, index settings modal) and `bin/reset-user-data.bat` wipe preferences, created rooms and sessions back to first-run state.
+- "Apagar meus dados" (red button, index settings modal) wipes preferences, created rooms, sessions **and custom notification sounds** back to first-run state; `bin\reset-user-data.bat` wipes the server-side data.
 - PHP sessions moved to `data/sessions` so the reset can wipe them without touching the system temp.
 - Photo limit raised to 5 MB with a 15 s decode timeout; photos are still downscaled to 256 px JPEG before storing.
 - Camera opening now validates the saved device id and falls back (720p → 480p → any camera) with PT-BR error messages.

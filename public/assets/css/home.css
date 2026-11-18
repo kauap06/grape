@@ -26,7 +26,7 @@
   font-size: clamp(36px, 6vh, 56px); font-weight: var(--font-weight-bold);
   letter-spacing: -0.04em; line-height: 1; color: var(--color-text-primary);
 }
-.header-nav { position: absolute; top: var(--space-lg); right: var(--space-lg); display: flex; }
+.header-nav { position: absolute; top: var(--space-lg); right: var(--space-lg); display: flex; gap: 8px; }
 .nav-link {
   display: flex; align-items: center; justify-content: center;
   width: 44px; height: 44px;
@@ -326,3 +326,42 @@ body.is-compact.page-home .modal .btn,
 body.is-compact.page-home .modal .form-select,
 body.is-compact.page-home .modal .form-range,
 body.is-compact.page-home .modal .modal-close { border-radius: 8px; }
+
+/* Sons personalizados (Home) */
+.sounds-modal { max-width: 560px; }
+.sounds-modal .modal-body > .settings-hint { margin: 0 0 14px; line-height: 1.5; }
+.sound-settings-list { display: flex; flex-direction: column; gap: 8px; }
+.sound-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, .035);
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, .08));
+  border-radius: 12px;
+}
+.sound-row-info { flex: 1; min-width: 0; }
+.sound-row-title { display: block; font-size: 14px; font-weight: 600; }
+.sound-row-status {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--color-text-muted, #75757d);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sound-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.sound-row-actions .btn { white-space: nowrap; }
+.sound-row-actions [data-sound-remove][hidden] { display: none; }
+@media (max-width: 560px) {
+  .sound-row { align-items: stretch; flex-direction: column; gap: 10px; }
+  .sound-row-actions { justify-content: flex-start; }
+}

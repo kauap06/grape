@@ -2,7 +2,7 @@
  * Gaming Calls Platform - Home Page Logic
  */
 
-import { Logger, Toast, Modal, Storage, API, Devices, Utils } from './utils.js';
+import { Logger, Toast, Modal, Storage, API, Devices, Utils, SoundStore } from './utils.js';
 
 // ============================================
 // State
@@ -35,6 +35,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   cacheElements();
   loadPreferences();
+  await Promise.race([
+    loadCustomSounds(),
+    new Promise(resolve => setTimeout(resolve, 1500))
+  ]);
   setupEventListeners();
   updateAvatarPreview();
   await loadDevices();
@@ -77,6 +81,13 @@ function cacheElements() {
   elements.settingsClose = document.getElementById('settings-close');
   elements.settingsCancel = document.getElementById('settings-cancel');
   elements.settingsSave = document.getElementById('settings-save');
+
+  // Sons personalizados
+  elements.soundsBtn = document.getElementById('sounds-btn');
+  elements.soundsModal = document.getElementById('sounds-modal');
+  elements.soundsClose = document.getElementById('sounds-close');
+  elements.soundsDone = document.getElementById('sounds-done');
+  elements.soundSettingsList = document.getElementById('sound-settings-list');
   elements.cameraSelect = document.getElementById('camera-select');
   elements.micSelect = document.getElementById('mic-select');
   elements.speakerSelect = document.getElementById('speaker-select');
@@ -137,6 +148,14 @@ function setupEventListeners() {
     Modal.open('settings-modal');
     refreshCaStatus();
   });
+  elements.soundsBtn?.addEventListener('click', () => {
+    renderSoundSettings();
+    Modal.open('sounds-modal');
+  });
+  elements.soundsClose?.addEventListener('click', () => Modal.close('sounds-modal'));
+  elements.soundsDone?.addEventListener('click', () => Modal.close('sounds-modal'));
+  elements.soundSettingsList?.addEventListener('click', handleSoundListClick);
+  elements.soundSettingsList?.addEventListener('change', handleSoundInputChange);
   elements.caCheckBtn?.addEventListener('click', refreshCaStatus);
   elements.settingsClose.addEventListener('click', () => Modal.close('settings-modal'));
   elements.settingsCancel.addEventListener('click', () => Modal.close('settings-modal'));
@@ -457,6 +476,141 @@ function saveSettings() {
 }
 
 // ============================================
+// Sons personalizados
+// ============================================
+const customSounds = {}; // key -> { url, name }
+let soundPreviewAudio = null;
+
+async function loadCustomSounds() {
+  try {
+    const saved = await SoundStore.readAll();
+    saved.forEach(({ key, value }) => {
+      if (!SoundStore.defaults[key] || !value?.blob) return;
+      customSounds[key] = {
+        url: URL.createObjectURL(value.blob),
+        name: (value.name || 'Som personalizado').slice(0, 120)
+      };
+    });
+  } catch (e) {
+    Logger.warn('Custom sounds unavailable:', e);
+  }
+  renderSoundSettings();
+}
+
+function setCustomSound(key, blob, name) {
+  const previous = customSounds[key];
+  if (previous?.url) URL.revokeObjectURL(previous.url);
+  customSounds[key] = {
+    url: URL.createObjectURL(blob),
+    name: (name || 'Som personalizado').slice(0, 120)
+  };
+}
+
+function clearCustomSound(key) {
+  const previous = customSounds[key];
+  if (previous?.url) URL.revokeObjectURL(previous.url);
+  delete customSounds[key];
+}
+
+function renderSoundSettings() {
+  const list = elements.soundSettingsList;
+  if (!list) return;
+  list.querySelectorAll('[data-sound-row]').forEach(row => {
+    const key = row.dataset.soundRow;
+    const custom = customSounds[key];
+    const status = row.querySelector('[data-sound-status]');
+    const remove = row.querySelector('[data-sound-remove]');
+    if (custom) {
+      if (status) {
+        status.textContent = custom.name;
+        status.title = custom.name;
+      }
+      if (remove) remove.hidden = false;
+      row.dataset.custom = 'true';
+    } else {
+      if (status) {
+        status.textContent = 'Som padrão';
+        status.removeAttribute('title');
+      }
+      if (remove) remove.hidden = true;
+      delete row.dataset.custom;
+    }
+  });
+}
+
+function previewSound(key) {
+  const file = SoundStore.defaults[key];
+  if (!file) return;
+  const source = SoundStore.resolve(file, customSounds);
+  if (soundPreviewAudio) {
+    soundPreviewAudio.pause();
+    soundPreviewAudio.currentTime = 0;
+  }
+  soundPreviewAudio = new Audio(source);
+  soundPreviewAudio.volume = 0.35;
+  soundPreviewAudio.play().catch(() => Toast.error('Não foi possível reproduzir este áudio'));
+}
+
+async function handleSoundInputChange(e) {
+  const input = e.target.closest('[data-sound-input]');
+  if (!input) return;
+  const row = input.closest('[data-sound-row]');
+  const key = row?.dataset.soundRow;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file || !key || !SoundStore.defaults[key]) return;
+
+  const validation = await SoundStore.validateFile(file);
+  if (!validation.ok) {
+    Toast.error(validation.message);
+    return;
+  }
+
+  try {
+    await SoundStore.put(key, file);
+    setCustomSound(key, file, file.name);
+    renderSoundSettings();
+    Toast.success('Som atualizado');
+    previewSound(key);
+  } catch (err) {
+    Logger.error('Falha ao salvar som:', err);
+    Toast.error('Não foi possível salvar o áudio');
+  }
+}
+
+async function handleSoundListClick(e) {
+  const row = e.target.closest('[data-sound-row]');
+  if (!row) return;
+  const key = row.dataset.soundRow;
+  if (!key || !SoundStore.defaults[key]) return;
+
+  if (e.target.closest('[data-sound-preview]')) {
+    previewSound(key);
+    return;
+  }
+
+  if (e.target.closest('[data-sound-upload]')) {
+    row.querySelector('[data-sound-input]')?.click();
+    return;
+  }
+
+  const removeBtn = e.target.closest('[data-sound-remove]');
+  if (!removeBtn) return;
+  removeBtn.disabled = true;
+  try {
+    await SoundStore.remove(key);
+    clearCustomSound(key);
+    renderSoundSettings();
+    Toast.success('Som padrão restaurado');
+  } catch (err) {
+    Logger.error('Falha ao remover som:', err);
+    Toast.error('Não foi possível remover o áudio');
+  } finally {
+    removeBtn.disabled = false;
+  }
+}
+
+// ============================================
 // Room Actions
 // ============================================
 async function createRoom() {
@@ -515,6 +669,9 @@ async function resetUserData() {
   }
 
   Storage.clear();
+  await Promise.all(
+    Object.keys(SoundStore.defaults).map(key => SoundStore.remove(key).catch(() => {}))
+  );
 
   // Cookies do app (sessão e chave de preferências)
   for (const nome of ['gaming_calls_session', 'grape_pref']) {

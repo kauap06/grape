@@ -4,7 +4,7 @@
  * (câmera e/ou tela de quem está selecionado).
  */
 
-import { Logger, Toast, Modal, Storage, Devices, Utils, API } from './utils.js';
+import { Logger, Toast, Modal, Storage, Devices, Utils, API, SoundStore } from './utils.js';
 
 // ============================================
 // Constantes
@@ -185,6 +185,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // estado (antes disso o checkbox ainda não existia e ficava dessincronizado).
   setCompactMode(!!uiPrefs.compactMode, true);
   loadSettings();
+  // Não atrasa a entrada na sala se o IndexedDB estiver lento/indisponível.
+  await Promise.race([
+    loadCustomSounds(),
+    new Promise(resolve => setTimeout(resolve, 1500))
+  ]);
   setupEventListeners();
   setupMediaSession();
   setupFloatingCamera();
@@ -1832,6 +1837,7 @@ function toggleMicrophone() {
     updateMediaButtons();
     broadcastMediaState();
     renderParticipants();
+    playNotificationSound('unmute.wav');
     // Encerrar o deafen libera o próprio mute no servidor.
     sendWebSocketMessage('self-mute', { muted: false });
     return;
@@ -1844,6 +1850,7 @@ function toggleMicrophone() {
   state.media.microphoneMuted = querMudo;
   state.muteState = querMudo ? 'SELF_MUTED' : 'UNMUTED';
   state.muteBy = querMudo ? state.sessionId : null;
+  playNotificationSound(querMudo ? 'mute.wav' : 'unmute.wav');
 
   updateMediaButtons();
   broadcastMediaState();
@@ -3843,15 +3850,33 @@ function notifyRoom(message, duration, options) {
 const notificationSounds = {};
 // Volume dos avisos: reduzido em degraus (0.8, mais 15%, mais 15%)
 const SOUND_VOLUME = 0.35;
+const customSounds = {}; // key -> { url, name }; personalização vem do IndexedDB
+
+async function loadCustomSounds() {
+  try {
+    const saved = await SoundStore.readAll();
+    saved.forEach(({ key, value }) => {
+      if (!SoundStore.defaults[key] || !value?.blob) return;
+      customSounds[key] = {
+        url: URL.createObjectURL(value.blob),
+        name: (value.name || 'Som personalizado').slice(0, 120)
+      };
+    });
+  } catch (e) {
+    Logger.warn('Custom sounds unavailable:', e);
+  }
+}
+
 function playNotificationSound(file = 'message.mp3') {
   if (notificationsMuted) return;
   try {
-    let audio = notificationSounds[file];
+    const source = SoundStore.resolve(file, customSounds);
+    let audio = notificationSounds[source];
     if (!audio) {
-      audio = new Audio((window.APP_CONFIG?.baseUrl || '') + '/assets/sound/' + file);
+      audio = new Audio(source);
       audio.preload = 'auto';
       audio.volume = SOUND_VOLUME;
-      notificationSounds[file] = audio;
+      notificationSounds[source] = audio;
     }
     // Reaplica a cada toque, caso o volume tenha mudado
     audio.volume = SOUND_VOLUME;
@@ -4254,6 +4279,11 @@ function cleanup() {
   }
 
   navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
+
+  Object.values(customSounds).forEach(({ url }) => {
+    delete notificationSounds[url];
+    URL.revokeObjectURL(url);
+  });
 }
 
 // ============================================

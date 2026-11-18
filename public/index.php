@@ -65,6 +65,13 @@ $prefsJson = json_encode(
                     <span class="logo-text">grape</span>
                 </div>
                 <nav class="header-nav">
+                    <button type="button" class="nav-link" id="sounds-btn" aria-label="Personalizar sons" title="Personalizar sons">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M9 18V5l12-2v13"/>
+                            <circle cx="6" cy="18" r="3"/>
+                            <circle cx="18" cy="16" r="3"/>
+                        </svg>
+                    </button>
                     <button type="button" class="nav-link" id="settings-btn" aria-label="Configurações" title="Configurações">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <circle cx="12" cy="12" r="3"/>
@@ -247,13 +254,97 @@ $prefsJson = json_encode(
 
                     <div class="settings-section section-data">
                         <h3>Dados</h3>
-                        <p class="settings-hint">Apaga perfil, preferências e dispositivos salvos neste navegador. Não dá para desfazer.</p>
+                        <p class="settings-hint">Apaga perfil, preferências, dispositivos e sons personalizados salvos neste navegador. Não dá para desfazer.</p>
                         <button type="button" class="btn btn-danger" id="reset-data-btn">Apagar dados</button>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="settings-cancel">Cancelar</button>
                     <button type="button" class="btn btn-primary" id="settings-save">Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sounds Modal -->
+        <div class="modal-overlay" id="sounds-modal" role="dialog" aria-modal="true" aria-labelledby="sounds-title">
+            <div class="modal panel sounds-modal">
+                <div class="modal-header">
+                    <h2 id="sounds-title">Sons da sala</h2>
+                    <button class="modal-close" id="sounds-close" aria-label="Fechar">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="settings-hint">Personalize os avisos de entrada, saída, mute e desmute. Cada arquivo pode ter até 5 MB. As mudanças são aplicadas na hora; remover restaura o som padrão.</p>
+
+                    <div class="sound-settings-list" id="sound-settings-list">
+                        <div class="sound-row" data-sound-row="join">
+                            <div class="sound-row-info">
+                                <span class="sound-row-title">Entrar na call</span>
+                                <span class="sound-row-status" data-sound-status>Som padrão</span>
+                            </div>
+                            <div class="sound-row-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-preview>Ouvir</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-upload>Escolher áudio</button>
+                                <button type="button" class="btn btn-ghost btn-sm" data-sound-remove hidden>Remover</button>
+                                <input type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" data-sound-input hidden>
+                            </div>
+                        </div>
+                        <div class="sound-row" data-sound-row="leave">
+                            <div class="sound-row-info">
+                                <span class="sound-row-title">Sair da call</span>
+                                <span class="sound-row-status" data-sound-status>Som padrão</span>
+                            </div>
+                            <div class="sound-row-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-preview>Ouvir</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-upload>Escolher áudio</button>
+                                <button type="button" class="btn btn-ghost btn-sm" data-sound-remove hidden>Remover</button>
+                                <input type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" data-sound-input hidden>
+                            </div>
+                        </div>
+                        <div class="sound-row" data-sound-row="screen">
+                            <div class="sound-row-info">
+                                <span class="sound-row-title">Transmitir tela</span>
+                                <span class="sound-row-status" data-sound-status>Som padrão</span>
+                            </div>
+                            <div class="sound-row-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-preview>Ouvir</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-upload>Escolher áudio</button>
+                                <button type="button" class="btn btn-ghost btn-sm" data-sound-remove hidden>Remover</button>
+                                <input type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" data-sound-input hidden>
+                            </div>
+                        </div>
+                        <div class="sound-row" data-sound-row="mute">
+                            <div class="sound-row-info">
+                                <span class="sound-row-title">Mutar microfone</span>
+                                <span class="sound-row-status" data-sound-status>Som padrão</span>
+                            </div>
+                            <div class="sound-row-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-preview>Ouvir</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-upload>Escolher áudio</button>
+                                <button type="button" class="btn btn-ghost btn-sm" data-sound-remove hidden>Remover</button>
+                                <input type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" data-sound-input hidden>
+                            </div>
+                        </div>
+                        <div class="sound-row" data-sound-row="unmute">
+                            <div class="sound-row-info">
+                                <span class="sound-row-title">Desmutar microfone</span>
+                                <span class="sound-row-status" data-sound-status>Som padrão</span>
+                            </div>
+                            <div class="sound-row-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-preview>Ouvir</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-sound-upload>Escolher áudio</button>
+                                <button type="button" class="btn btn-ghost btn-sm" data-sound-remove hidden>Remover</button>
+                                <input type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" data-sound-input hidden>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="sounds-done">Concluir</button>
                 </div>
             </div>
         </div>

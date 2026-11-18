@@ -508,6 +508,130 @@ const Utils = {
 };
 
 // ============================================
+// Sons personalizáveis (IndexedDB, compartilhado entre Home e sala)
+// ============================================
+const SOUND_DEFAULTS = Object.freeze({
+  join: 'join.mp3',
+  leave: 'exit-call.mp3',
+  mute: 'mute.wav',
+  unmute: 'unmute.wav',
+  screen: 'screen.mp3'
+});
+const SOUND_FILE_KEYS = Object.freeze({
+  'join.mp3': 'join',
+  'exit-call.mp3': 'leave',
+  'mute.wav': 'mute',
+  'unmute.wav': 'unmute',
+  'screen.mp3': 'screen'
+});
+
+const SoundStore = {
+  defaults: SOUND_DEFAULTS,
+  fileKeys: SOUND_FILE_KEYS,
+  maxBytes: 5 * 1024 * 1024,
+  _dbPromise: null,
+
+  openDatabase() {
+    if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB indisponível'));
+    if (!this._dbPromise) {
+      this._dbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open('grape_room_sounds', 1);
+        req.onupgradeneeded = () => {
+          if (!req.result.objectStoreNames.contains('sounds')) {
+            req.result.createObjectStore('sounds');
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => {
+          this._dbPromise = null;
+          reject(req.error);
+        };
+        req.onblocked = () => {
+          this._dbPromise = null;
+          reject(new Error('IndexedDB bloqueado'));
+        };
+      });
+    }
+    return this._dbPromise;
+  },
+
+  readAll() {
+    return this.openDatabase().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction('sounds', 'readonly');
+      const store = tx.objectStore('sounds');
+      const keysReq = store.getAllKeys();
+      const valuesReq = store.getAll();
+      tx.oncomplete = () => resolve(
+        keysReq.result.map((key, index) => ({ key, value: valuesReq.result[index] }))
+      );
+      tx.onerror = () => reject(tx.error);
+    }));
+  },
+
+  put(key, file) {
+    if (!SOUND_DEFAULTS[key]) return Promise.reject(new Error('Som inválido'));
+    return this.openDatabase().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction('sounds', 'readwrite');
+      tx.objectStore('sounds').put({ blob: file, name: file.name, type: file.type }, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  },
+
+  remove(key) {
+    return this.openDatabase().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction('sounds', 'readwrite');
+      tx.objectStore('sounds').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  },
+
+  resolve(file, custom = {}) {
+    const key = SOUND_FILE_KEYS[file];
+    if (key && custom[key]?.url) return custom[key].url;
+    return (window.APP_CONFIG?.baseUrl || '') + '/assets/sound/' + (key ? SOUND_DEFAULTS[key] : file);
+  },
+
+  async validateFile(file) {
+    if (!file || file.size === 0) {
+      return { ok: false, message: 'Escolha um arquivo de áudio válido' };
+    }
+    if (file.size > this.maxBytes) {
+      return { ok: false, message: 'O áudio deve ter no máximo 5 MB' };
+    }
+    if (file.type && !file.type.startsWith('audio/')) {
+      return { ok: false, message: 'Escolha um arquivo de áudio válido' };
+    }
+    if (!(await this.canPlay(file))) {
+      return { ok: false, message: 'Não foi possível reproduzir este áudio' };
+    }
+    return { ok: true };
+  },
+
+  canPlay(file) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const audio = new Audio();
+      let settled = false;
+      const finish = (valid) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        audio.removeAttribute('src');
+        URL.revokeObjectURL(url);
+        resolve(valid);
+      };
+      const timer = setTimeout(() => finish(false), 6000);
+      audio.preload = 'metadata';
+      audio.onloadedmetadata = () => finish(true);
+      audio.onerror = () => finish(false);
+      audio.src = url;
+    });
+  }
+};
+
+// ============================================
 // Export for modules
 // ============================================
-export { Logger, EventEmitter, Toast, Modal, Storage, API, Devices, Utils };
+export { Logger, EventEmitter, Toast, Modal, Storage, API, Devices, Utils, SoundStore };
