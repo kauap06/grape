@@ -403,7 +403,6 @@ body.is-compact .chat-message.own .chat-message-content {
 
 /* Controles retos e sem brilho */
 body.is-compact .icon-btn,
-body.is-compact .invite-btn,
 body.is-compact .settings-input,
 body.is-compact .chat-input,
 body.is-compact .chat-send,
@@ -419,7 +418,6 @@ body.is-compact .modal-close {
   box-shadow: none;
 }
 body.is-compact .icon-btn:hover,
-body.is-compact .invite-btn:hover,
 body.is-compact .side-tab:hover { background: var(--min-line); }
 body.is-compact .dock-btn { background: transparent; border-color: transparent; }
 body.is-compact .dock-btn:hover { background: var(--min-line); border-color: transparent; }
@@ -513,7 +511,6 @@ body.is-compact .pane {
 
 /* Controles da sala: retos e sem brilho */
 body.is-compact .icon-btn,
-body.is-compact .invite-btn,
 body.is-compact .settings-input,
 body.is-compact .chat-input,
 body.is-compact .chat-send,
@@ -523,7 +520,6 @@ body.is-compact .swatch {
   box-shadow: none;
 }
 body.is-compact .icon-btn:hover,
-body.is-compact .invite-btn:hover { background: var(--min-line); }
 body.is-compact .swatch { outline-offset: 2px; }
 body.is-compact .swatch.selected { outline-color: var(--color-accent-primary); box-shadow: none; }
 

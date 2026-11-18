@@ -121,10 +121,6 @@ $prefsJson = json_encode(
                     Silenciar todos
                 </button>
                 <ul class="people" id="participants-list"></ul>
-                <button class="invite-btn" id="invite-btn" type="button">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                    Convidar
-                </button>
             </section>
 
             <section class="side-panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
@@ -152,28 +148,44 @@ $prefsJson = json_encode(
                 </div>
 
                 <div class="view-tabs" id="view-tabs" role="tablist" aria-label="O que ver">
-                    <button class="view-tab" role="tab" id="view-tab-camera" data-view="camera" aria-selected="true">
+                    <button class="view-tab" role="tab" id="view-tab-camera" data-view="camera" aria-selected="true" aria-label="Vídeo">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-                        Vídeo
+                        <span class="view-tab-label">Vídeo</span>
                         <i class="live-pip" aria-hidden="true"></i>
                     </button>
-                    <button class="view-tab" role="tab" id="view-tab-screen" data-view="screen" aria-selected="false">
+                    <button class="view-tab" role="tab" id="view-tab-screen" data-view="screen" aria-selected="false" aria-label="Tela">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                        Tela
+                        <span class="view-tab-label">Tela</span>
                         <i class="live-pip" aria-hidden="true"></i>
                     </button>
                     <button class="view-tab" role="tab" id="view-tab-grid" data-view="grid" aria-selected="false" aria-label="Todos" title="Ver todos">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
                         <span class="view-tab-label">Todos</span>
                     </button>
+                    <!-- Aba do Multi Screen: só existe depois que o usuário
+                         adiciona a primeira tela extra ao workspace. -->
+                    <div class="multi-tab-slot" id="multi-tab-slot" role="presentation" hidden>
+                        <button class="view-tab" role="tab" id="view-tab-multi" data-view="multi" aria-selected="false" title="Multi Screen" aria-label="Multi Screen">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="2"/><rect x="13" y="4" width="9" height="16" rx="2"/></svg>
+                            <span class="view-tab-label">Multi Screen</span>
+                        </button>
+                        <button type="button" class="multi-tab-close" id="multi-tab-close" aria-label="Fechar Multi Screen" title="Fechar Multi Screen">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
                 </div>
 
-                <button class="popout-btn" id="popout-btn" type="button" title="Janela flutuante (P)" aria-label="Janela flutuante" aria-pressed="false" hidden>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/><path d="M15 3h6v6M21 3l-8 8"/></svg>
-                </button>
-                <button class="icon-btn" id="fullscreen-btn" aria-label="Tela cheia" title="Tela cheia (F)">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                </button>
+                <div class="stage-actions">
+                    <button class="popout-btn" id="popout-btn" type="button" title="Janela flutuante (P)" aria-label="Janela flutuante" aria-pressed="false" hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/><path d="M15 3h6v6M21 3l-8 8"/></svg>
+                    </button>
+                    <button class="popout-btn multi-btn" id="multi-btn" type="button" title="Ver várias telas ao mesmo tempo" aria-label="Ver várias telas ao mesmo tempo" aria-pressed="false" hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="2"/><rect x="13" y="4" width="9" height="16" rx="2"/></svg>
+                    </button>
+                    <button class="icon-btn" id="fullscreen-btn" aria-label="Tela cheia" title="Tela cheia (F)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
+                </div>
             </header>
 
             <div class="stage" id="stage">
@@ -193,6 +205,26 @@ $prefsJson = json_encode(
                     <video id="video-screen" playsinline autoplay></video>
                     <div class="pane-empty" id="empty-screen"></div>
                     <span class="pane-tag">Tela</span>
+                </div>
+
+                <!-- Multi Screen: grade dinâmica, no máximo quatro telas. -->
+                <div class="multi-grid" id="multi-grid" aria-label="Multi Screen"></div>
+                <div class="multi-empty" id="multi-empty" hidden>
+                    <strong>Nenhuma tela no Multi Screen</strong>
+                    <span>Use “Adicionar tela” para escolher uma transmissão.</span>
+                </div>
+                <span class="multi-add-wrap" id="multi-add-wrap" hidden>
+                    <button class="multi-add" id="multi-add-btn" type="button" title="Adicionar tela" aria-label="Adicionar tela" aria-haspopup="dialog" aria-controls="multi-picker" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="2.5" y="4" width="13" height="9.5" rx="2"/>
+                            <path d="M6 18h4"/>
+                            <line x1="19" y1="12" x2="19" y2="20"/>
+                            <line x1="15" y1="16" x2="23" y2="16"/>
+                        </svg>
+                    </button>
+                </span>
+                <div class="multi-picker" id="multi-picker" role="dialog" aria-label="Adicionar tela" hidden>
+                    <div class="multi-picker-panel" id="multi-picker-panel"></div>
                 </div>
                 <button type="button" class="cam-restore" id="cam-restore" data-action="show-camera" aria-label="Mostrar câmera" title="Mostrar câmera" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
@@ -228,9 +260,6 @@ $prefsJson = json_encode(
                 <button class="dock-btn" id="toggle-screen-btn" aria-label="Compartilhar tela" title="Compartilhar tela" aria-pressed="false">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M12 13V8M9.5 10.5L12 8l2.5 2.5"/></svg>
                     <i class="dock-dot" aria-hidden="true"></i>
-                </button>
-                <button class="dock-btn" id="dock-invite-btn" aria-label="Convidar" title="Copiar link de convite">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
                 </button>
                 <button class="dock-btn dock-leave" id="leave-call-btn" aria-label="Sair da sala" title="Sair da sala">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>

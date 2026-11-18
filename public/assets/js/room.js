@@ -23,7 +23,8 @@ const ICONS = {
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
   volumeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>',
   headphonesOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 14.5-7.1M21 12v2"/><path d="M21 15a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h3v3zM3 15a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H3v3z"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
-  volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>'
+  volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
 };
 
 // ============================================
@@ -101,7 +102,10 @@ const state = {
     grid: false, // visão em blocos de todos os participantes
     split: false, // câmera e tela lado a lado
     manual: false, // o usuário já escolheu alguém?
-    tabPref: new Map() // sessionId -> aba escolhida manualmente
+    tabPref: new Map(), // sessionId -> aba escolhida manualmente
+    // Multi Screen: grade dinâmica com as telas escolhidas pelo usuário.
+    // `participants` guarda a ordem; o estado sobrevive à troca de abas.
+    multi: createMultiState()
   },
 
   // Câmera flutuante sobre a tela (posição como fração do espaço livre: 1,1 = canto inferior direito)
@@ -185,6 +189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupMediaSession();
   setupFloatingCamera();
   setupCameraResize();
+  setupMultiWorkspace();
   updateMediaButtons();
   renderAll();
   setupMediaDevices();
@@ -361,7 +366,6 @@ function cacheElements() {
   elements.panelChat = $('panel-chat');
   elements.participantCount = $('participant-count-value');
   elements.participantsList = $('participants-list');
-  elements.inviteBtn = $('invite-btn');
   elements.roomCode = $('room-code');
 
   elements.chatMessages = $('chat-messages');
@@ -394,6 +398,10 @@ function cacheElements() {
   elements.viewTabCamera = $('view-tab-camera');
   elements.viewTabScreen = $('view-tab-screen');
   elements.viewTabGrid = $('view-tab-grid');
+  elements.multiTabSlot = $('multi-tab-slot');
+  elements.viewTabMulti = $('view-tab-multi');
+  elements.multiTabClose = $('multi-tab-close');
+  elements.multiBtn = $('multi-btn');
   elements.stageGrid = $('stage-grid');
   elements.fullscreenBtn = $('fullscreen-btn');
   elements.popoutBtn = $('popout-btn');
@@ -404,13 +412,19 @@ function cacheElements() {
     camera: { pane: $('pane-camera'), video: $('video-camera'), empty: $('empty-camera') },
     screen: { pane: $('pane-screen'), video: $('video-screen'), empty: $('empty-screen') }
   };
+  elements.multiGrid = $('multi-grid');
+  elements.multiPicker = $('multi-picker');
+  elements.multiPickerPanel = $('multi-picker-panel');
+  elements.multiAddWrap = $('multi-add-wrap');
+  elements.multiAddBtn = $('multi-add-btn');
+  elements.multiEmpty = $('multi-empty');
+  elements.stageHead = document.querySelector('.stage-head');
 
   elements.toggleMicBtn = $('toggle-mic-btn');
   elements.toggleDeafenBtn = $('toggle-deafen-btn');
   elements.toggleNotifBtn = $('toggle-notif-btn');
   elements.toggleCameraBtn = $('toggle-camera-btn');
   elements.toggleScreenBtn = $('toggle-screen-btn');
-  elements.dockInviteBtn = $('dock-invite-btn');
   elements.leaveCallBtn = $('leave-call-btn');
   elements.layoutBtn = $('layout-btn');
   elements.callSettingsBtn = $('call-settings-btn');
@@ -469,7 +483,6 @@ function setupEventListeners() {
   elements.sideClose?.addEventListener('click', () => toggleSide(false));
   elements.sideOverlay?.addEventListener('click', () => toggleSide(false));
   elements.sideTabs.forEach(tab => tab.addEventListener('click', () => showSidePanel(tab.dataset.panel)));
-  elements.inviteBtn?.addEventListener('click', copyInviteLink);
   elements.roomCode?.addEventListener('click', copyRoomCode);
   elements.chatForm?.addEventListener('submit', sendChatMessage);
 
@@ -491,6 +504,13 @@ function setupEventListeners() {
     if (!elements.personMenu.hidden && !e.target.closest('#person-menu') && !e.target.closest('[data-menu]')) {
       closePersonMenu();
     }
+    // Seletor do Multi Screen: fecha ao clicar fora (ou no próprio botão)
+    if (state.view.multi.pickerOpen &&
+        !e.target.closest('#multi-picker') &&
+        !e.target.closest('#multi-add-wrap') &&
+        !e.target.closest('#multi-btn')) {
+      closeMultiPicker();
+    }
   });
 
   // Palco
@@ -498,7 +518,41 @@ function setupEventListeners() {
     const tab = e.target.closest('[data-view]');
     if (tab) setViewTab(tab.dataset.view);
   });
+  elements.multiTabClose?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeMultiWorkspace();
+  });
+  elements.stage?.addEventListener('dblclick', (e) => {
+    if (!isMultiActive()) return;
+    if (e.target.closest('[data-multi-remove]') || e.target.closest('[data-multi-open]')) return;
+    const tile = e.target.closest('[data-multi-tile]');
+    if (!tile) return;
+    e.preventDefault();
+    openMultiFocus(tile.dataset.multiTile);
+  });
+  // Qualquer clique fora do cartão em foco fecha o modo de foco, inclusive
+  // no cabeçalho, na lateral ou na barra inferior. Dentro do cartão, não.
+  document.addEventListener('click', (e) => {
+    if (!multiFocus || multiFocus.closing) return;
+    if (e.target.closest('.multi-focus-card')) return;
+    closeMultiFocus();
+  });
   elements.stage?.addEventListener('click', (e) => {
+    // Seletor do Multi Screen
+    if (e.target === elements.multiPicker) { closeMultiPicker(); return; }
+    const multiAction = e.target.closest('[data-multi-action]')?.dataset.multiAction;
+    if (multiAction === 'close-picker') { closeMultiPicker(); return; }
+    const multiSelect = e.target.closest('[data-multi-select]');
+    if (multiSelect) { selectMultiParticipant(multiSelect.dataset.multiSelect); return; }
+    const multiOpen = e.target.closest('[data-multi-open]');
+    if (multiOpen) { openMultiParticipantView(multiOpen.dataset.multiOpen); return; }
+    const multiRemove = e.target.closest('[data-multi-remove]');
+    if (multiRemove) { removeMultiParticipant(multiRemove.dataset.multiRemove); return; }
+    const multiTile = e.target.closest('[data-multi-tile]');
+    if (multiTile && isMultiActive()) {
+      focusMultiParticipant(multiTile.dataset.multiTile);
+      return;
+    }
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (action === 'toggle-camera') toggleCamera();
     if (action === 'toggle-screen') toggleScreenShare();
@@ -509,6 +563,8 @@ function setupEventListeners() {
   });
   elements.fullscreenBtn?.addEventListener('click', toggleFullscreen);
   elements.popoutBtn?.addEventListener('click', togglePopout);
+  elements.multiBtn?.addEventListener('click', onMultiButton);
+  elements.multiAddBtn?.addEventListener('click', onMultiAddButton);
   elements.popinBtn?.addEventListener('click', closePopout);
   if (popoutSupported()) elements.popoutBtn.hidden = false;
 
@@ -519,7 +575,6 @@ function setupEventListeners() {
   updateNotifButton();
   elements.toggleCameraBtn?.addEventListener('click', toggleCamera);
   elements.toggleScreenBtn?.addEventListener('click', toggleScreenShare);
-  elements.dockInviteBtn?.addEventListener('click', copyInviteLink);
   elements.leaveCallBtn?.addEventListener('click', leaveRoom);
   elements.layoutBtn?.addEventListener('click', toggleSplit);
   elements.callSettingsBtn?.addEventListener('click', () => openSettings());
@@ -587,16 +642,13 @@ function setupEventListeners() {
       dockMoreBtn.setAttribute('aria-expanded', 'false');
       openSettings();
     });
-    document.getElementById('overflow-invite')?.addEventListener('click', () => {
-      dockOverflowMenu.hidden = true;
-      dockMoreBtn.setAttribute('aria-expanded', 'false');
-      copyInviteLink();
-    });
   }
 }
 
 function handleKeyboardShortcuts(e) {
   if (e.key === 'Escape') {
+    if (multiFocus) { closeMultiFocus(); return; }
+    if (state.view.multi?.pickerOpen) { closeMultiPicker(); return; }
     closePersonMenu();
     toggleSide(false);
     Modal.closeAll();
@@ -1158,7 +1210,9 @@ function handleMediaStateChanged(payload) {
   }
 
   renderParticipants();
-  if (state.view.sessionId === sessionId) renderStage();
+  // O Multi Screen depende do estado de tela de qualquer participante:
+  // re-renderiza o palco também quando outra pessoa começa/para de compartilhar.
+  renderStage();
 }
 
 function handleWebSocketError(payload) {
@@ -1254,7 +1308,7 @@ function createPeerConnection(remoteSessionId, isInitiator) {
   pc.onconnectionstatechange = () => {
     Logger.log(`PC state with ${remoteSessionId}:`, pc.connectionState);
     renderParticipants();
-    if (state.view.sessionId === remoteSessionId) renderStage();
+    if (state.view.sessionId === remoteSessionId || isMultiActive()) renderStage();
   };
 
   if (isInitiator) {
@@ -1414,7 +1468,7 @@ function handleRemoteTrack(peer, event) {
       break;
   }
 
-  if (state.view.sessionId === peer.id) renderStage();
+  if (state.view.sessionId === peer.id || isMultiActive()) renderStage();
 }
 
 // Áudio de cada participante toca sempre, independente de qual aba está aberta
@@ -1568,7 +1622,7 @@ function updateAudioActivity() {
   if (changed) {
     state.audioActive = nowActive;
     renderParticipants();
-    if (state.view.sessionId || state.view.grid) renderStage();
+    if (state.view.sessionId || state.view.grid || isMultiActive()) renderStage();
   }
 
   requestAnimationFrame(updateAudioActivity);
@@ -2128,6 +2182,8 @@ function connectionLabel(sessionId) {
 // Seleção e palco
 // ============================================
 function selectParticipant(sessionId, { tab, manual = true } = {}) {
+  const wasMulti = isMultiActive();
+
   if (!sessionId || !state.participants.has(sessionId)) {
     state.view.sessionId = null;
     renderAll();
@@ -2148,27 +2204,55 @@ function selectParticipant(sessionId, { tab, manual = true } = {}) {
     state.view.tab = state.view.tabPref.get(sessionId) || (flagsOf(sessionId).screen ? 'screen' : 'camera');
   }
 
+  // Seleção automática (ex.: participante da aba atual saiu) não deve
+  // expulsar o usuário do Multi Screen. Seleção manual, sim: mostra a pessoa.
+  if (wasMulti && !manual) {
+    state.view.grid = false;
+    state.view.tab = 'multi';
+  }
+
   renderAll();
   toggleSide(false);
 }
 
 function setViewTab(tab) {
+  if (tab === 'multi') {
+    if (!state.view.multi.created) return;
+    enterMultiTab();
+    return;
+  }
+
+  const leavingMulti = isMultiActive();
+  if (leavingMulti) {
+    state.view.tab = multiUnderlyingTab();
+    state.view.grid = false;
+  }
+
   if (tab === 'grid') {
     state.view.grid = true;
     renderAll(); // a lista da esquerda deixa de marcar alguém
     return;
   }
+
   const id = state.view.sessionId;
-  if (!id) return;
+  if (!id) {
+    renderAll();
+    return;
+  }
+
   const leavingGrid = state.view.grid;
   state.view.grid = false;
   state.view.tab = tab;
   state.view.tabPref.set(id, tab);
-  if (leavingGrid) renderAll();
+  if (leavingGrid || leavingMulti) renderAll();
   else renderStage();
 }
 
 function toggleSplit() {
+  if (isMultiActive()) {
+    state.view.tab = multiUnderlyingTab();
+    state.view.grid = false;
+  }
   state.view.split = !state.view.split;
   state.view.grid = false;
   Storage.set('roomView', { split: state.view.split });
@@ -2185,6 +2269,847 @@ function selfCameraStream() {
   return selfCameraCache.stream;
 }
 
+// ============================================
+// Multi Screen (grade dinâmica de telas)
+// ============================================
+// Reaproveita os streams de tela que já chegam pelo peer connection: nenhuma
+// conexão nova é criada nem uma nova captura é pedida aos participantes.
+const MULTI_MAX_SCREENS = 4;
+const multiTiles = new Map(); // sessionId -> { el, video, status, avatar, name, remove }
+let multiHeaderSig = null; // evita recriar os avatares a cada atualização de áudio
+let multiPickerSig = null; // evita recriar o seletor aberto a cada atualização
+let multiLayoutTimer = 0;
+let multiFocus = null; // foco visual: mesmo stream, sem nova conexão WebRTC
+
+function setupMultiWorkspace() {
+  if (!elements.stage) return;
+  // A quantidade de colunas depende do espaço real do palco (janela normal,
+  // tela cheia e janela flutuante). O ResizeObserver recalcula sozinho.
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      if (!isMultiActive()) return;
+      layoutMultiGrid();
+      if (multiFocus) layoutMultiFocus();
+    }).observe(elements.stage);
+  }
+}
+
+function createMultiState() {
+  return {
+    created: false,
+    participants: [],      // sessionIds na ordem exibida
+    previousTab: null,     // aba para onde voltar ao fechar o workspace
+    focus: null,           // tela com destaque visual/áudio
+    pickerOpen: false,
+    pendingInitial: null,  // tela já assistida, guardada até criar o workspace
+    pendingPreviousTab: null,
+    errors: new Set()      // sessionIds cujo <video> falhou ao tocar
+  };
+}
+
+// Todos os participantes com compartilhamento de tela ativo, na ordem da sala.
+function activeShareIds() {
+  return state.order.filter(id => state.participants.has(id) && flagsOf(id).screen);
+}
+
+function isMultiActive() {
+  return state.view.multi.created && state.view.tab === 'multi' && !state.view.grid;
+}
+
+function activeTab() {
+  if (state.view.grid) return 'grid';
+  if (state.view.tab === 'multi' && state.view.multi.created) return 'multi';
+  return state.view.tab === 'screen' ? 'screen' : 'camera';
+}
+
+// Aba individual usada por baixo do Multi Screen (para onde os controles
+// individuais voltam quando o usuário sai da aba, sem fechar o workspace).
+function multiUnderlyingTab() {
+  const prev = state.view.multi.previousTab;
+  if (prev === 'camera' || prev === 'screen') return prev;
+  const id = state.view.sessionId;
+  return (id && state.participants.has(id) && flagsOf(id).screen) ? 'screen' : 'camera';
+}
+
+// Stream de tela que já existe (próprio ou remoto), sem pedir nada novo.
+function screenStreamFor(sessionId) {
+  if (!sessionId || !state.participants.has(sessionId)) return null;
+  if (!flagsOf(sessionId).screen) return null;
+  if (sessionId === state.sessionId) return state.screenStream;
+  return state.peers.get(sessionId)?.screenStream || null;
+}
+
+// A tela que o usuário já estava assistindo será a primeira do workspace.
+function preferredInitialShare() {
+  const shares = activeShareIds();
+  if (!shares.length) return null;
+  const selected = state.view.sessionId;
+  if (selected && shares.includes(selected)) return selected;
+  return shares.find(id => id !== state.sessionId) || shares[0];
+}
+
+// O botão aparece com duas ou mais telas ativas e continua disponível
+// enquanto o workspace existir, mesmo que reste uma tela só.
+function updateMultiButton() {
+  const btn = elements.multiBtn;
+  if (!btn) return;
+  const multi = state.view.multi;
+  const count = activeShareIds().length;
+  btn.hidden = !(multi.created || count >= 2);
+
+  const active = isMultiActive();
+  btn.classList.toggle('is-active', active);
+  btn.setAttribute('aria-pressed', String(active));
+  const label = multi.created
+    ? (active ? 'Multi Screen' : 'Abrir Multi Screen')
+    : 'Ver várias telas ao mesmo tempo';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+function onMultiButton() {
+  const multi = state.view.multi;
+  if (!multi.created) {
+    openMultiPicker();
+    return;
+  }
+  if (!isMultiActive()) enterMultiTab();
+}
+
+// Botão compacto no cabeçalho do workspace. No limite, fica desabilitado;
+// o wrapper mantém o tooltip visível mesmo com o botão nativo desabilitado.
+function updateMultiAddButton() {
+  const wrap = elements.multiAddWrap;
+  const btn = elements.multiAddBtn;
+  if (!wrap || !btn) return;
+
+  const active = isMultiActive();
+  wrap.hidden = !active;
+  if (!active) {
+    btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+
+  const full = state.view.multi.participants.length >= MULTI_MAX_SCREENS;
+  const tip = full
+    ? `Máximo de ${MULTI_MAX_SCREENS} telas no Multi Screen`
+    : 'Adicionar tela';
+  btn.disabled = full;
+  btn.setAttribute('aria-disabled', String(full));
+  btn.setAttribute('aria-expanded', String(state.view.multi.pickerOpen));
+  btn.setAttribute('aria-label', tip);
+  btn.title = tip;
+  wrap.title = tip;
+  wrap.classList.toggle('is-full', full);
+}
+
+function onMultiAddButton() {
+  const multi = state.view.multi;
+  if (!isMultiActive() || multi.participants.length >= MULTI_MAX_SCREENS) return;
+  if (multi.pickerOpen) closeMultiPicker();
+  else openMultiPicker();
+}
+
+function enterMultiTab() {
+  const multi = state.view.multi;
+  if (!multi.created) return;
+  const current = activeTab();
+  if (current !== 'multi') multi.previousTab = current;
+  state.view.grid = false;
+  state.view.tab = 'multi';
+  renderAll();
+}
+
+function openMultiPicker() {
+  const multi = state.view.multi;
+  if (!multi.created) {
+    const initial = preferredInitialShare();
+    if (!initial) return;
+    multi.pendingInitial = initial;
+    multi.pendingPreviousTab = activeTab();
+  }
+  multi.pickerOpen = true;
+  renderStage();
+}
+
+function closeMultiPicker() {
+  const multi = state.view.multi;
+  if (!multi.pickerOpen) return;
+  multi.pickerOpen = false;
+  if (!multi.created) {
+    multi.pendingInitial = null;
+    multi.pendingPreviousTab = null;
+  }
+  renderStage();
+}
+
+function multiPickerOptions() {
+  const multi = state.view.multi;
+  const excluded = new Set(multi.participants);
+  if (!multi.created && multi.pendingInitial) excluded.add(multi.pendingInitial);
+  return activeShareIds().filter(id => !excluded.has(id));
+}
+
+function selectMultiParticipant(sessionId) {
+  const multi = state.view.multi;
+  if (!sessionId || !state.participants.has(sessionId) || !flagsOf(sessionId).screen) {
+    multi.pickerOpen = false;
+    Toast.info('Essa tela não está mais disponível');
+    renderStage();
+    return;
+  }
+  if (multi.participants.includes(sessionId)) return;
+  if (multi.participants.length >= MULTI_MAX_SCREENS) {
+    multi.pickerOpen = false;
+    Toast.info(`Máximo de ${MULTI_MAX_SCREENS} telas no Multi Screen`);
+    renderStage();
+    return;
+  }
+
+  if (!multi.created) {
+    let initial = multi.pendingInitial;
+    if (!initial || initial === sessionId || !state.participants.has(initial) || !flagsOf(initial).screen) {
+      initial = activeShareIds().find(id => id !== sessionId) || null;
+    }
+
+    multi.created = true;
+    multi.participants = initial ? [initial, sessionId] : [sessionId];
+    multi.focus = sessionId;
+    multi.previousTab = multi.pendingPreviousTab || activeTab();
+    multi.pendingInitial = null;
+    multi.pendingPreviousTab = null;
+    multi.pickerOpen = false;
+    state.view.grid = false;
+    state.view.tab = 'multi';
+
+    // O PiP comum prende um <video>; criar o workspace troca o palco.
+    if (popout.mode === 'video') closePopout();
+
+    renderAll();
+    Logger.log('Multi Screen criado:', multi.participants);
+    return;
+  }
+
+  multi.participants.push(sessionId);
+  multi.focus = sessionId;
+  multi.pickerOpen = false;
+  multi.errors.delete(sessionId);
+  renderAll();
+}
+
+function finalizeMultiRemoval(sessionId) {
+  const multi = state.view.multi;
+  const index = multi.participants.indexOf(sessionId);
+  if (index === -1) return;
+
+  multi.participants.splice(index, 1);
+  if (multi.focus === sessionId) multi.focus = multi.participants[0] || null;
+  multi.errors.delete(sessionId);
+  destroyMultiTile(sessionId);
+  renderAll();
+}
+
+function removeMultiParticipant(sessionId) {
+  const multi = state.view.multi;
+  if (!multi.created || !sessionId) return;
+  if (!multi.participants.includes(sessionId)) return;
+  if (multiFocus?.id === sessionId) closeMultiFocus({ immediate: true });
+
+  const tile = multiTiles.get(sessionId);
+  if (tile && !tile.el.classList.contains('is-removing')) {
+    tile.el.classList.add('is-removing');
+    const workspace = multi;
+    setTimeout(() => {
+      // A aba pode ter sido fechada e recriada durante a animação: não mexa
+      // no workspace novo por causa de uma remoção do workspace anterior.
+      if (state.view.multi === workspace) finalizeMultiRemoval(sessionId);
+    }, 150);
+    return;
+  }
+  finalizeMultiRemoval(sessionId);
+}
+
+function focusMultiParticipant(sessionId) {
+  const multi = state.view.multi;
+  if (!isMultiActive() || !multi.participants.includes(sessionId)) return;
+  if (multi.focus === sessionId) return;
+  multi.focus = sessionId;
+  updateMultiGridTiles();
+}
+
+// Clicar no nome/avatar de um tile abre a visão individual daquela pessoa.
+// A seleção manual já encerra a visão Multi Screen, mas mantém a aba criada.
+function openMultiParticipantView(sessionId) {
+  if (!isMultiActive() || !sessionId || !state.participants.has(sessionId)) return;
+  const flags = flagsOf(sessionId);
+  closeMultiFocus({ immediate: true });
+  selectParticipant(sessionId, {
+    manual: true,
+    tab: flags.screen ? 'screen' : undefined
+  });
+}
+
+// ============================================
+// Foco visual de uma tela
+// ============================================
+// O foco usa um clone do <video> com o MESMO MediaStream já recebido. Nada é
+// reconectado, reiniciado ou recapturado: apenas a apresentação muda.
+function multiFocusMetrics() {
+  const stage = elements.stage;
+  const rect = stage.getBoundingClientRect();
+  const margin = Math.max(12, Math.min(28, rect.width * 0.02));
+  const maxW = Math.max(1, Math.min(window.innerWidth * 0.57, rect.width - margin * 2));
+  const maxH = Math.max(1, rect.height - margin * 2);
+  const width = Math.min(maxW, maxH * (16 / 9));
+  const height = width * (9 / 16);
+  return {
+    width,
+    height,
+    x: (rect.width - width) / 2,
+    y: (rect.height - height) / 2
+  };
+}
+
+function openMultiFocus(sessionId) {
+  if (!isMultiActive() || multiFocus) return;
+  const tile = multiTiles.get(sessionId);
+  if (!tile) return;
+
+  const stream = screenStreamFor(sessionId) || tile.video.srcObject;
+  if (!stream) return;
+
+  const stage = elements.stage;
+  const stageRect = stage.getBoundingClientRect();
+  const tileRect = tile.el.getBoundingClientRect();
+  const target = multiFocusMetrics();
+
+  const layer = document.createElement('div');
+  layer.className = 'multi-focus-layer';
+  layer.setAttribute('role', 'dialog');
+  layer.setAttribute('aria-label', 'Tela em foco');
+
+  const card = document.createElement('div');
+  card.className = 'multi-focus-card';
+  card.style.width = `${target.width}px`;
+  card.style.height = `${target.height}px`;
+
+  const video = document.createElement('video');
+  video.playsInline = true;
+  video.autoplay = true;
+  video.muted = true; // o áudio continua vindo do tile original
+  video.srcObject = stream;
+
+  const tag = tile.el.querySelector('.multi-tile-tag')?.cloneNode(true);
+  if (tag) {
+    tag.setAttribute('aria-hidden', 'true');
+    tag.removeAttribute('data-multi-open');
+    tag.removeAttribute('title');
+    tag.tabIndex = -1;
+  }
+
+  card.append(video);
+  if (tag) card.append(tag);
+  layer.append(card);
+  stage.append(layer);
+
+  const sx = tileRect.left - stageRect.left;
+  const sy = tileRect.top - stageRect.top;
+  const scaleX = tileRect.width / target.width;
+  const scaleY = tileRect.height / target.height;
+  card.style.transform = `translate(${sx}px, ${sy}px) scale(${scaleX}, ${scaleY})`;
+  void card.offsetWidth;
+
+  multiFocus = { id: sessionId, layer, card, video, target, opened: false, closing: false, timer: 0 };
+  stage.classList.add('has-multi-focus');
+  playMedia(video);
+
+  // Clicar no fundo fecha; clicar no cartão (vídeo/tag) não.
+  layer.addEventListener('click', (e) => {
+    if (e.target === layer) closeMultiFocus();
+  });
+
+  requestAnimationFrame(() => {
+    if (!multiFocus || multiFocus.layer !== layer || multiFocus.closing) return;
+    multiFocus.opened = true;
+    layer.classList.add('is-open');
+    card.style.transform = `translate(${target.x}px, ${target.y}px) scale(1, 1)`;
+  });
+}
+
+function layoutMultiFocus() {
+  const focus = multiFocus;
+  if (!focus || !focus.opened || focus.closing) return;
+  const target = multiFocusMetrics();
+  focus.target = target;
+  focus.card.style.width = `${target.width}px`;
+  focus.card.style.height = `${target.height}px`;
+  focus.card.style.transform = `translate(${target.x}px, ${target.y}px) scale(1, 1)`;
+}
+
+function closeMultiFocus({ immediate = false } = {}) {
+  const focus = multiFocus;
+  if (!focus) return;
+
+  if (immediate) {
+    if (focus.timer) clearTimeout(focus.timer);
+    focus.layer.remove();
+    if (focus.video) focus.video.srcObject = null;
+    elements.stage?.classList.remove('has-multi-focus');
+    multiFocus = null;
+    return;
+  }
+  if (focus.closing) return;
+  focus.closing = true;
+  focus.layer.classList.remove('is-open');
+
+  // Volta para a posição atual do tile (se ele ainda existir), preservando
+  // o grid exatamente como estava por baixo.
+  const tile = multiTiles.get(focus.id);
+  if (tile) {
+    const stageRect = elements.stage.getBoundingClientRect();
+    const tileRect = tile.el.getBoundingClientRect();
+    const sx = tileRect.left - stageRect.left;
+    const sy = tileRect.top - stageRect.top;
+    focus.card.style.transform = `translate(${sx}px, ${sy}px) scale(${tileRect.width / focus.target.width}, ${tileRect.height / focus.target.height})`;
+  } else {
+    focus.card.style.opacity = '0';
+  }
+
+  focus.timer = setTimeout(() => {
+    focus.layer.remove();
+    if (focus.video) focus.video.srcObject = null;
+    elements.stage?.classList.remove('has-multi-focus');
+    if (multiFocus === focus) multiFocus = null;
+  }, 300);
+}
+
+// Fecha o workspace: some com a aba, com os tiles e com a seleção. Não para
+// o compartilhamento de ninguém. Volta para a aba ativa antes do Multi Screen.
+function closeMultiWorkspace() {
+  const multi = state.view.multi;
+  if (!multi.created) return;
+
+  const wasActive = isMultiActive();
+  const back = multi.previousTab;
+  const underlying = multiUnderlyingTab();
+
+  destroyMultiWorkspace();
+
+  if (wasActive) {
+    state.view.grid = back === 'grid';
+    if (back === 'grid') {
+      state.view.tab = underlying;
+    } else {
+      state.view.tab = (back === 'camera' || back === 'screen') ? back : underlying;
+      if (state.view.sessionId) state.view.tabPref.set(state.view.sessionId, state.view.tab);
+    }
+  }
+  renderAll();
+}
+
+function destroyMultiWorkspace() {
+  closeMultiFocus({ immediate: true });
+  multiTiles.forEach((_, id) => destroyMultiTile(id));
+  multiTiles.clear();
+  if (multiLayoutTimer) {
+    clearTimeout(multiLayoutTimer);
+    multiLayoutTimer = 0;
+  }
+  if (elements.multiGrid) {
+    elements.multiGrid.replaceChildren();
+    elements.multiGrid.classList.remove('is-layout-animating');
+  }
+  if (elements.multiPicker) elements.multiPicker.hidden = true;
+  if (elements.multiEmpty) elements.multiEmpty.hidden = true;
+  if (elements.multiAddWrap) elements.multiAddWrap.hidden = true;
+  state.view.multi = createMultiState();
+  multiHeaderSig = null;
+  multiPickerSig = null;
+  elements.stage?.classList.remove('is-multi');
+  elements.stageHead?.classList.remove('is-multi-head');
+}
+
+// Mantém a grade coerente com o estado real das telas. Não adiciona ninguém
+// automaticamente: telas novas só entram quando o usuário escolhe.
+function syncMultiState() {
+  const multi = state.view.multi;
+  if (!multi.created) return;
+
+  const active = new Set(activeShareIds());
+  const kept = multi.participants.filter(id => active.has(id) && state.participants.has(id));
+  const removed = multi.participants.filter(id => !kept.includes(id));
+
+  if (multiFocus && !kept.includes(multiFocus.id)) closeMultiFocus({ immediate: true });
+
+  if (removed.length) {
+    multi.participants = kept;
+    removed.forEach(id => {
+      multi.errors.delete(id);
+      destroyMultiTile(id);
+    });
+  }
+
+  if (multi.focus && !multi.participants.includes(multi.focus)) {
+    multi.focus = multi.participants[0] || null;
+  }
+  if (!multi.focus && multi.participants.length) multi.focus = multi.participants[0];
+
+  multi.errors.forEach(id => {
+    if (!multi.participants.includes(id)) multi.errors.delete(id);
+  });
+}
+
+function multiTileEl(sessionId) {
+  let tile = multiTiles.get(sessionId);
+  if (tile) return tile;
+
+  const el = document.createElement('div');
+  el.className = 'multi-tile';
+  el.dataset.multiTile = sessionId;
+  el.innerHTML = `
+    <video playsinline autoplay></video>
+    <div class="multi-tile-status"></div>
+    <button type="button" class="multi-tile-tag" data-multi-open="${escapeAttr(sessionId)}" aria-label="Ver a tela">
+      <span class="user-avatar multi-tile-avatar"></span>
+      <span class="multi-tile-name"></span>
+    </button>
+    <button type="button" class="multi-tile-remove" data-multi-remove="${escapeAttr(sessionId)}" aria-label="Remover tela" title="Remover tela">${ICONS.close}</button>
+  `;
+
+  const video = el.querySelector('video');
+  tile = {
+    el,
+    video,
+    status: el.querySelector('.multi-tile-status'),
+    avatar: el.querySelector('.multi-tile-avatar'),
+    name: el.querySelector('.multi-tile-name'),
+    tag: el.querySelector('.multi-tile-tag'),
+    remove: el.querySelector('.multi-tile-remove'),
+    avatarSig: ''
+  };
+
+  const refresh = () => {
+    if (isMultiActive()) updateMultiTile(sessionId);
+  };
+  ['loadeddata', 'canplay', 'playing'].forEach(ev => video.addEventListener(ev, refresh));
+  video.addEventListener('error', () => {
+    if (!isMultiActive()) return;
+    state.view.multi.errors.add(sessionId);
+    updateMultiTile(sessionId);
+  });
+
+  multiTiles.set(sessionId, tile);
+  return tile;
+}
+
+function updateMultiTile(sessionId) {
+  const tile = multiTiles.get(sessionId);
+  const multi = state.view.multi;
+  if (!tile || !multi.participants.includes(sessionId)) return;
+
+  const participant = state.participants.get(sessionId);
+  if (!participant) return;
+
+  const isSelf = sessionId === state.sessionId;
+  const peer = state.peers.get(sessionId);
+  const flags = flagsOf(sessionId);
+  const conn = connectionLabel(sessionId);
+  const focused = multi.focus === sessionId;
+
+  tile.el.classList.toggle('is-focused', focused);
+
+  const name = participant.display_name || 'Jogador';
+  const label = name + (isSelf ? ' (você)' : '');
+  if (tile.name.textContent !== label) tile.name.textContent = label;
+  const openLabel = `Ver a tela de ${label}`;
+  if (tile.tag.getAttribute('aria-label') !== openLabel) {
+    tile.tag.setAttribute('aria-label', openLabel);
+    tile.tag.title = openLabel;
+  }
+  const avatarSig = `${name}|${(participant.avatar_data || '').length}`;
+  if (tile.avatarSig !== avatarSig) {
+    tile.avatarSig = avatarSig;
+    setAvatar(tile.avatar, participant.avatar_data, name);
+  }
+
+  // O áudio da tela toca só na tela em foco, como no modo individual.
+  tile.video.muted = isSelf || state.deafened || !!peer?.localMuted || !focused;
+
+  const wanted = flags.screen ? screenStreamFor(sessionId) : null;
+  if (tile.video.srcObject !== (wanted || null)) {
+    tile.video.srcObject = wanted || null;
+    multi.errors.delete(sessionId);
+    if (wanted) playMedia(tile.video);
+  }
+
+  const errored = multi.errors.has(sessionId);
+  const playing = !!wanted && !errored && tile.video.readyState >= 2;
+  tile.el.classList.toggle('has-video', playing);
+
+  const key = `${flags.screen}|${errored}|${playing}|${conn || ''}|${wanted ? 's' : 'n'}`;
+  if (tile.status.dataset.key === key) return;
+  tile.status.dataset.key = key;
+
+  if (errored) {
+    tile.status.innerHTML = `<div class="multi-tile-msg">Não foi possível exibir esta tela</div>`;
+  } else if (!flags.screen) {
+    tile.status.innerHTML = `<div class="multi-tile-msg">Esta tela não está mais disponível</div>`;
+  } else if (conn === 'Sem conexão') {
+    tile.status.innerHTML = `<div class="multi-tile-msg">Sem conexão com esta tela</div>`;
+  } else if (conn) {
+    tile.status.innerHTML = `<div class="multi-tile-loading">
+      <svg class="multi-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+      <span>${escapeHtml(conn)}</span>
+    </div>`;
+  } else if (!playing) {
+    tile.status.innerHTML = `<div class="multi-tile-loading">
+      <svg class="multi-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+      <span>Carregando tela...</span>
+    </div>`;
+  } else {
+    tile.status.innerHTML = '';
+  }
+}
+
+function destroyMultiTile(sessionId) {
+  const tile = multiTiles.get(sessionId);
+  if (!tile) return;
+  if (tile.video.srcObject) tile.video.srcObject = null;
+  tile.el.remove();
+  multiTiles.delete(sessionId);
+}
+
+function updateMultiGridTiles() {
+  state.view.multi.participants.forEach(updateMultiTile);
+}
+
+// Calcula o tamanho dos tiles para caber inteiro na área visível. A grade é
+// flexível para centralizar automaticamente qualquer linha incompleta.
+// Mantém 16:9 e usa sempre 2 colunas (exceto com uma tela), o que garante:
+// 1 tela centralizada, 2 lado a lado, 3 em 2+1 e 4 em 2x2.
+function layoutMultiGrid(total = state.view.multi.participants.length) {
+  const grid = elements.multiGrid;
+  const stage = elements.stage;
+  if (!grid || !stage) return;
+
+  const stageStyle = getComputedStyle(stage);
+  const gridStyle = getComputedStyle(grid);
+  const stagePadX = (parseFloat(stageStyle.paddingLeft) || 0) + (parseFloat(stageStyle.paddingRight) || 0);
+  const stagePadY = (parseFloat(stageStyle.paddingTop) || 0) + (parseFloat(stageStyle.paddingBottom) || 0);
+  const gridPadX = (parseFloat(gridStyle.paddingLeft) || 0) + (parseFloat(gridStyle.paddingRight) || 0);
+  const gridPadY = (parseFloat(gridStyle.paddingTop) || 0) + (parseFloat(gridStyle.paddingBottom) || 0);
+  const availW = Math.max(1, stage.clientWidth - stagePadX - gridPadX);
+  const availH = Math.max(1, stage.clientHeight - stagePadY - gridPadY);
+  const gapX = parseFloat(gridStyle.columnGap) || 12;
+  const gapY = parseFloat(gridStyle.rowGap) || gapX;
+
+  const count = Math.max(0, total);
+  if (!count) {
+    grid.style.width = '0px';
+    return;
+  }
+
+  const cols = count === 1 ? 1 : 2;
+  const rows = Math.ceil(count / cols);
+  const widthByCols = (availW - (cols - 1) * gapX) / cols;
+  const heightByRows = (availH - (rows - 1) * gapY) / rows;
+  const tileW = Math.min(widthByCols, heightByRows * (16 / 9));
+  const tileH = tileW * (9 / 16);
+  if (!(tileW > 0) || !(tileH > 0)) return;
+
+  // Arredonda para baixo para nunca estourar a área visível por 1px.
+  const safeW = Math.max(1, Math.floor(tileW * 100) / 100);
+  const safeH = Math.max(1, Math.floor(safeW * (9 / 16) * 100) / 100);
+  const tilesW = cols * safeW + (cols - 1) * gapX;
+  const gridW = Math.min(availW + gridPadX, tilesW + gridPadX);
+  const small = safeH < 110;
+
+  grid.style.width = `${gridW}px`;
+  grid.style.gridTemplateColumns = '';
+  grid.style.gridTemplateRows = '';
+  [...elements.multiGrid.children].forEach(tile => {
+    tile.style.width = `${safeW}px`;
+    tile.style.height = `${safeH}px`;
+    tile.style.setProperty('--tile-h', `${safeH}px`);
+    tile.classList.toggle('is-small', small);
+  });
+}
+
+function animateMultiLayout() {
+  const grid = elements.multiGrid;
+  if (!grid) return;
+  if (multiLayoutTimer) clearTimeout(multiLayoutTimer);
+  grid.classList.add('is-layout-animating');
+  multiLayoutTimer = setTimeout(() => {
+    grid.classList.remove('is-layout-animating');
+    multiLayoutTimer = 0;
+  }, 220);
+}
+
+function renderMultiGrid() {
+  if (!elements.multiGrid) return;
+  const multi = state.view.multi;
+  const ids = multi.participants.filter(id => state.participants.has(id));
+
+  [...multiTiles.keys()].forEach(id => {
+    if (!ids.includes(id)) destroyMultiTile(id);
+  });
+
+  const nodes = ids.map(id => multiTileEl(id).el);
+  // A ordem não muda enquanto os participantes são adicionados/removidos;
+  // só troca o DOM quando realmente precisa (evita reiniciar os vídeos).
+  const current = [...elements.multiGrid.children];
+  const changed = current.length !== nodes.length || nodes.some((node, i) => current[i] !== node);
+  if (changed) {
+    elements.multiGrid.replaceChildren(...nodes);
+    animateMultiLayout();
+  }
+
+  ids.forEach(updateMultiTile);
+  layoutMultiGrid(ids.length);
+  if (elements.multiEmpty) elements.multiEmpty.hidden = !isMultiActive() || ids.length > 0;
+}
+
+// Libera os vídeos ao trocar de aba, sem perder a ordem nem a seleção.
+function releaseMultiMedia() {
+  multiTiles.forEach(tile => {
+    if (tile.video.srcObject) tile.video.srcObject = null;
+  });
+}
+
+function renderMultiHeader() {
+  const ids = state.view.multi.participants.filter(id => state.participants.has(id));
+  elements.viewingName.textContent = 'Multi Screen';
+  if (popout.nameEl) popout.nameEl.textContent = 'Multi Screen';
+  const sig = ids.map(id => {
+    const p = state.participants.get(id);
+    return `${id}:${p.display_name || ''}:${(p.avatar_data || '').length}`;
+  }).join('|');
+  if (sig === multiHeaderSig) return;
+  multiHeaderSig = sig;
+  elements.viewingAvatar.classList.remove('audio-active');
+  groupAvatarSig = '';
+
+  if (ids.length > 1) {
+    elements.viewingAvatar.classList.add('is-stack');
+    elements.viewingAvatar.style.cssText = '';
+    elements.viewingAvatar.innerHTML = ids.slice(0, 3)
+      .map(id => avatarHtml(state.participants.get(id)))
+      .join('');
+  } else if (ids.length === 1) {
+    elements.viewingAvatar.classList.remove('is-stack');
+    const p = state.participants.get(ids[0]);
+    setAvatar(elements.viewingAvatar, p.avatar_data, p.display_name);
+  } else {
+    elements.viewingAvatar.classList.remove('is-stack');
+    elements.viewingAvatar.innerHTML = '';
+    elements.viewingAvatar.style.cssText = '';
+  }
+}
+
+function renderMultiStage() {
+  if (!elements.stage || !state.view.multi.created) return;
+  syncMultiState();
+
+  const stage = elements.stage;
+  stage.classList.remove('is-empty', 'is-grid', 'split');
+  stage.classList.add('is-multi');
+  elements.stageHead?.classList.add('is-multi-head');
+  elements.camRestore.hidden = true;
+  elements.viewTabs.hidden = false;
+  elements.viewTabs.classList.remove('is-hidden');
+  elements.multiTabSlot.hidden = false;
+  elements.viewTabMulti.setAttribute('aria-selected', 'true');
+  elements.viewTabGrid.setAttribute('aria-selected', 'false');
+  elements.viewTabCamera.setAttribute('aria-selected', 'false');
+  elements.viewTabScreen.setAttribute('aria-selected', 'false');
+  elements.viewTabCamera.classList.remove('is-live');
+  elements.viewTabScreen.classList.remove('is-live');
+
+  const participant = state.participants.get(state.view.sessionId);
+  const showKindTabs = !!participant;
+  elements.viewTabCamera.hidden = !showKindTabs;
+  elements.viewTabScreen.hidden = !showKindTabs;
+  if (participant) {
+    const flags = flagsOf(state.view.sessionId);
+    elements.viewTabCamera.classList.toggle('is-live', flags.camera);
+    elements.viewTabScreen.classList.toggle('is-live', flags.screen);
+  }
+
+  ['camera', 'screen'].forEach(kind => {
+    const p = elements.panes[kind];
+    p.pane.hidden = true;
+    p.pane.classList.remove('is-floating');
+    if (p.video.srcObject) p.video.srcObject = null;
+  });
+
+  renderMultiHeader();
+  renderMultiGrid();
+  renderMultiPicker();
+  updateMultiAddButton();
+}
+
+// Ao sair da aba, as mídias são liberadas mas os tiles e a ordem continuam
+// guardados para a volta (a aba Multi Screen não é fechada).
+function hideMultiStage() {
+  closeMultiFocus({ immediate: true });
+  elements.stage?.classList.remove('is-multi');
+  elements.stageHead?.classList.remove('is-multi-head');
+  if (elements.multiEmpty) elements.multiEmpty.hidden = true;
+  releaseMultiMedia();
+  multiHeaderSig = null;
+  elements.multiTabSlot.hidden = !state.view.multi.created;
+  elements.viewTabMulti.setAttribute('aria-selected', 'false');
+}
+
+function renderMultiPicker() {
+  const picker = elements.multiPicker;
+  const panel = elements.multiPickerPanel;
+  const multi = state.view.multi;
+  if (!picker || !panel) return;
+
+  if (!multi.pickerOpen) {
+    multiPickerSig = null;
+    if (!picker.hidden) {
+      picker.hidden = true;
+      panel.innerHTML = '';
+    }
+    return;
+  }
+
+  const options = multiPickerOptions();
+  const sig = options.map(id => {
+    const p = state.participants.get(id);
+    return `${id}:${p?.display_name || ''}:${(p?.avatar_data || '').length}`;
+  }).join('|');
+  if (sig === multiPickerSig) {
+    picker.hidden = false;
+    return;
+  }
+  multiPickerSig = sig;
+
+  const items = options.map(id => {
+    const p = state.participants.get(id);
+    if (!p) return '';
+    const isSelf = id === state.sessionId;
+    return `<button type="button" class="multi-pick-item" data-multi-select="${escapeAttr(id)}">
+      ${avatarHtml(p, 'multi-pick-avatar')}
+      <span class="multi-pick-name">${escapeHtml(p.display_name || 'Jogador')}${isSelf ? ' (você)' : ''}</span>
+      <span class="multi-pick-icon" aria-hidden="true">${ICONS.screen}</span>
+    </button>`;
+  }).join('');
+
+  picker.hidden = false;
+  panel.innerHTML = `
+    <div class="multi-picker-head">
+      <span>Adicionar tela</span>
+      <button type="button" class="multi-picker-close" data-multi-action="close-picker" aria-label="Fechar">${ICONS.close}</button>
+    </div>
+    <div class="multi-picker-list">
+      ${items || '<p class="multi-picker-empty">Ninguém mais está compartilhando a tela</p>'}
+    </div>`;
+}
+
 function renderAll() {
   renderParticipants();
   renderStage();
@@ -2192,6 +3117,26 @@ function renderAll() {
 
 function renderStage() {
   if (!elements.stage) return;
+
+  // Saiu do Multi Screen (outra aba, fechamento etc.): o foco visual não
+  // deve sobreviver escondido por cima de outro modo de visualização.
+  if (!isMultiActive()) closeMultiFocus({ immediate: true });
+
+  // Mantém o workspace coerente com o estado real das telas antes de
+  // desenhar (participante saiu, parou de compartilhar etc.).
+  syncMultiState();
+  updateMultiButton();
+  updateMultiAddButton();
+
+  if (isMultiActive()) {
+    renderMultiStage();
+    return;
+  }
+
+  // Ao sair da aba Multi Screen, o estado e os tiles continuam guardados;
+  // só as mídias são liberadas.
+  hideMultiStage();
+  renderMultiPicker();
 
   const id = state.view.sessionId;
   const participant = state.participants.get(id);
@@ -2201,15 +3146,19 @@ function renderStage() {
 
   const grid = !!view.grid && state.participants.size > 0;
 
+  elements.stage.classList.remove('is-multi');
   elements.stage.classList.toggle('is-empty', !participant && !grid);
   elements.stage.classList.toggle('is-grid', grid);
   elements.stage.classList.toggle('split', split && !grid);
+  elements.viewTabs.hidden = false;
   elements.viewTabs.classList.toggle('is-hidden', state.participants.size === 0);
   // Vídeo/Tela só fazem sentido com alguém selecionado e fora do lado a lado
   const showKindTabs = !!participant && !split;
   elements.viewTabCamera.hidden = !showKindTabs;
   elements.viewTabScreen.hidden = !showKindTabs;
   elements.viewTabGrid.setAttribute('aria-selected', String(grid));
+  elements.multiTabSlot.hidden = !state.view.multi.created;
+  elements.viewTabMulti.setAttribute('aria-selected', 'false');
   syncCamResizeAvailability();
 
   if (grid) {
@@ -2217,7 +3166,10 @@ function renderStage() {
     if (popout.nameEl) popout.nameEl.textContent = elements.viewingName.textContent;
     renderGroupAvatar();
     elements.viewingAvatar.classList.remove('audio-active');
-    [elements.viewTabCamera, elements.viewTabScreen].forEach(el => el.setAttribute('aria-selected', 'false'));
+    [elements.viewTabCamera, elements.viewTabScreen].forEach(el => {
+      el.setAttribute('aria-selected', 'false');
+      el.classList.remove('is-live');
+    });
     elements.camRestore.hidden = true;
     ['camera', 'screen'].forEach(kind => {
       const p = elements.panes[kind];
@@ -2997,6 +3949,7 @@ function togglePopout() {
 
 async function openPopout() {
   if (popout.mode) return;
+  closeMultiFocus({ immediate: true });
   if (!state.view.sessionId) {
     Toast.info('Selecione uma pessoa');
     return;
@@ -3103,8 +4056,17 @@ async function openDocumentPopout() {
 }
 
 async function openVideoPopout() {
-  const panes = elements.panes;
-  const candidates = state.view.tab === 'screen' ? [panes.screen, panes.camera] : [panes.camera, panes.screen];
+  // Na aba Multi Screen, a tela em foco é a candidata natural ao PiP.
+  let candidates;
+  if (isMultiActive()) {
+    const focusId = state.view.multi.focus;
+    candidates = [...multiTiles.entries()]
+      .sort(([a], [b]) => (a === focusId ? -1 : b === focusId ? 1 : 0))
+      .map(([, tile]) => tile);
+  } else {
+    const panes = elements.panes;
+    candidates = state.view.tab === 'screen' ? [panes.screen, panes.camera] : [panes.camera, panes.screen];
+  }
   const target = candidates.find(p => p.video.srcObject && p.video.readyState >= 1);
   if (!target || !document.pictureInPictureEnabled) {
     Toast.warning('Nenhum vídeo para abrir na janela flutuante');
@@ -3162,14 +4124,22 @@ function closePopout({ fromWindow = false } = {}) {
 
 // Trocar um <video> de documento pode pausá-lo
 function refreshStageMedia() {
-  ['camera', 'screen'].forEach(kind => {
-    const { video } = elements.panes[kind];
-    if (video.srcObject) playMedia(video);
+  const videos = [
+    elements.panes.camera.video,
+    elements.panes.screen.video,
+    ...Array.from(multiTiles.values(), tile => tile.video),
+    multiFocus?.video
+  ];
+  videos.forEach(video => {
+    if (video?.srcObject) playMedia(video);
   });
 }
 
 function setPopoutView(view) {
   state.view.grid = false;
+  // Os botões Vídeo/Tela da janela flutuante são do modo individual. Sair da
+  // aba não fecha o workspace Multi Screen: a seleção continua guardada.
+  if (isMultiActive()) state.view.tab = multiUnderlyingTab();
   if (view === 'split') {
     state.view.split = true;
   } else {
@@ -3189,7 +4159,7 @@ function syncPopoutControls() {
   Object.values(popout.controls).forEach(({ clone, source }) => {
     clone.setAttribute('aria-pressed', source.getAttribute('aria-pressed'));
   });
-  const current = state.view.split ? 'split' : state.view.tab;
+  const current = activeTab() === 'multi' ? null : (state.view.split ? 'split' : state.view.tab);
   popout.views?.querySelectorAll('.pip-view').forEach(b => {
     b.setAttribute('aria-pressed', String(b.dataset.view === current));
   });
@@ -3248,22 +4218,6 @@ async function copyRoomCode() {
   Toast.success('Código copiado');
 }
 
-async function copyInviteLink() {
-  const url = state.inviteUrl;
-  try {
-    await navigator.clipboard.writeText(url);
-  } catch (e) {
-    // Sem permissão de clipboard (ex.: HTTP): cai no método antigo
-    const input = document.createElement('input');
-    input.value = url;
-    document.body.appendChild(input);
-    input.select();
-    document.execCommand('copy');
-    input.remove();
-  }
-  Toast.success('Link copiado');
-}
-
 // ============================================
 // Leave Room
 // ============================================
@@ -3275,6 +4229,7 @@ function leaveRoom() {
 
 function cleanup() {
   closePopout();
+  destroyMultiWorkspace();
 
   if (timerHandle) {
     clearInterval(timerHandle);
