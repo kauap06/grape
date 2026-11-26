@@ -1,0 +1,43 @@
+{
+	servers {
+		# HTTP/2 reduz latência de carregamento; WebSocket continua em HTTP/1.1.
+		protocols h1 h2
+	}
+	# Grape.exe owns the first-run certificate prompt. Without this, Caddy
+	# opens its own Windows security dialog to trust the local CA before the
+	# launcher can explain or control the installation.
+	skip_install_trust
+}
+
+# Unico ponto exposto na rede (443). PHP e WebSocket escutam apenas em
+# 127.0.0.1 e sao acessados por este proxy.
+https://{$RADMIN_IP:127.0.0.1}:8443, https://localhost:8443 {
+	tls internal
+	log
+
+	# Cabecalhos de seguranca + remove a versao do servidor
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	handle /ws* {
+		reverse_proxy 127.0.0.1:8182
+	}
+
+	# Compacta HTML, CSS, JS e JSON; o WebSocket não é afetado.
+	encode zstd gzip
+
+	# Assets estáticos mudam pouco entre aberturas; evita revalidar a cada page load.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=86400"
+
+	handle {
+		reverse_proxy 127.0.0.1:8181
+	}
+}

@@ -1,0 +1,376 @@
+# Grape
+
+A real-time voice, video, and screen sharing platform designed for gamers. Built with PHP 8.3, WebRTC, and WebSocket signaling.
+
+Designed for **local hosting through Radmin VPN**: one computer hosts the room, the others join through the same Radmin VPN network. Everything needed to run ships inside the project — **no PHP, MariaDB, Caddy, or Composer installation required**.
+
+---
+
+## Features
+
+- **Voice & Video Calls**: Low-latency WebRTC communication for every participant (not just the room creator)
+- **Screen Sharing**: Share entire screen, application window, or browser tab; visible to all participants
+- **Multi Screen**: watch up to **4 screen shares at once** in a 16:9 gallery with dedicated layouts for 1, 2, 3 and 4 screens. Double-click a tile for a focused view; click a participant's tag to open their individual screen tab. Removing a tile never stops that participant's actual share
+- **Host Moderation**: the room creator can mute/unmute a participant, force their camera off and remove them from the room (per-participant menu), plus a "mute all" button in the participant list — every command is validated server-side
+- **Custom Sound Notifications**: customize the **join, leave, mute, unmute and screen-share** cues from the home page (music button next to settings). Preview, upload or remove each sound (up to 5 MB); removing restores the default. Custom audio is stored **locally in the browser** (IndexedDB), never uploaded to the server, and the room applies it automatically. All cues play at reduced volume and honor the room's notification mute
+- **Compact Mode**: optional minimalist redesign (flat surfaces, no gradients/glass/shadows) applied to the home and the call room, remembered per browser
+- **Resizable Floating Camera**: while watching a screen share the camera becomes a draggable PiP window, resizable from all four corners keeping 16:9, closable, with persisted size
+- **Room Code**: shown next to the room name in the header; one click copies it
+- **Participant Tabs**: Discord-style tabs for switching between participant streams
+- **Shared Chat**: Real-time chat distributed through the WebSocket signaling server to all participants in the same room, with sender identification and timestamps
+- **New Message Notification**: `!` badge on the chat tab when a message arrives while the chat is not open
+- **User Avatars**: Profile image (custom photo or solid color with initials fallback) shown beside each participant's name; photos up to 5 MB are downscaled in the browser before storing
+- **Active Speaker Indicator**: Highlight on the participant currently speaking (Web Audio API)
+- **Participant Limit**: Configurable room capacity, default 10, enforced on frontend and backend with transactional join handling
+- **Stream Composition**: Twitch-style layouts (screen focus, camera focus, side-by-side, full-screen, custom)
+- **Dark Gaming UI**: Discord/Twitch inspired interface optimized for 1366x768 and 1920x1080
+- **No Authentication Required**: local profile; preferences (display name, audio, interface, devices) persist in localStorage first and on the server per browser, so they survive cache clears
+- **HTTPS by default**: Caddy with a local CA, trusted automatically, so camera/mic/screen work in any modern browser
+
+---
+
+## Quick start (host, Windows)
+
+```bat
+cd C:\xampp\htdocs\grape-new
+bin\start-host.bat
+```
+
+That single command:
+
+1. uses the bundled toolchain in `portable\` (no installation anywhere);
+2. starts MariaDB `33070`, the PHP HTTP server `8181`, the WebSocket server `8182` and Caddy `8443`;
+3. initializes the bundled database on first run and applies migrations (`database\migrate.php`);
+4. trusts the local HTTPS certificate on this PC (current user, no administrator);
+5. generates `deploy\ca\dist\install-ca.bat` for the guests;
+6. prints the invite link and how to find the Radmin VPN IPv4 address.
+
+Then open **`https://localhost:8443`** on the host.
+
+Stop everything with:
+
+```bat
+bin\stop-host.bat
+```
+
+It kills only this project's processes (identified by the `portable\` path), so other PHP/MariaDB installations on the machine are untouched. You can also just close the four service windows (`Grape MariaDB`, `Grape HTTP`, `Grape WebSocket`, `Grape HTTPS`).
+
+---
+
+## Joining as a guest
+
+1. Receive **one file** from the host: `deploy\ca\dist\install-ca.bat`.
+2. Double-click it (no administrator needed) → it trusts the host's certificate.
+3. **Close every browser window** (Chrome/Edge/Brave cache the certificate error until then).
+4. Open the invite link that starts with **`https://<HOST_VPN_IP>/?code=...`**.
+
+Camera, microphone and screen sharing only work over HTTPS — that is why the certificate step exists. Details and troubleshooting: [`docs/CERTIFICADOS.md`](docs/CERTIFICADOS.md).
+
+> Firefox keeps its **own** certificate store; either use a Chromium browser or import the CA manually (Firefox → Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import).
+
+If the guest still sees "not secure", run `deploy\ca\test-https.bat <HOST_VPN_IP>` on their PC — it reports whether the CA is installed, whether the Windows trust chain validates, and whether the default browser is Firefox.
+
+---
+
+## Requirements
+
+Bundled in `portable/` (nothing to install):
+
+| Component | Version | Path |
+|---|---|---|
+| PHP | 8.3.36 (TS x64) | `portable/php` — with `php.ini` (pdo_mysql, openssl, mbstring, curl, opcache) and `extras/ssl/cacert.pem` |
+| MariaDB | 11.4.5 | `portable/mariadb` — data dir in `portable/mariadb/data` |
+| Caddy | 2.11.9 | `portable/caddy` |
+| Composer | 2.11.2 | `portable/composer/composer.phar` |
+
+`bin\start-host.bat` resolves each of these from `portable\` first and only falls back to `PATH` if a folder is missing. The WebSocket server is pure PHP (Ratchet), so it runs from the same portable PHP.
+
+Still external, by nature:
+
+- **Radmin VPN** on the host and every guest;
+- a **modern browser** with WebRTC (Chrome, Edge, Brave; Firefox needs the extra CA step);
+- the **Visual C++ 2015-2022 runtime** (present on most Windows installs; a clean Windows may need it — it cannot be reliably bundled).
+
+---
+
+## Ports and access
+
+| Port | Service | Purpose |
+|---|---|---|
+| 33070 | MariaDB | rooms and participants |
+| 8181 | PHP built-in server | pages and REST API |
+| 8182 | WebSocket (Ratchet) | WebRTC signaling and chat |
+| 8443 | Caddy | HTTPS + `/ws` reverse proxy |
+
+- Host: `https://localhost:8443` (or `http://localhost:8181` without HTTPS).
+- Guests: **always the `https://<HOST_VPN_IP>:8443` link** — the HTTP link on `:8181` is not a secure origin and blocks camera/mic/screen.
+- Windows Firewall on the host: allow TCP **8443** (and `8181`/`8182` if anyone uses the HTTP link).
+
+Find the host's Radmin VPN IPv4 address with `ipconfig` (look for the Radmin VPN virtual adapter). See [`docs/LOCAL_HOSTING.md`](docs/LOCAL_HOSTING.md) for firewall rules.
+
+---
+
+## Configuration
+
+Runtime settings live in `config/config.php`, overridable per machine in `config/local.php` (not versioned). Defaults:
+
+- database `grape_calls` on `127.0.0.1:33070`, user `grape` — no password is shipped; set it in `config/local.php` (copy `config/local.php.example`);
+- PHP HTTP server `127.0.0.1:8181`, WebSocket `127.0.0.1:8182` — reachable only through the Caddy proxy on 8443;
+- room capacity 10, chat message limit 500 characters, WebSocket ping 25 s.
+
+Credentials never belong in `config/config.php`, which is versioned. Use `config/local.php` or the `DATABASE_USERNAME` / `DATABASE_PASSWORD` environment variables.
+
+WebRTC STUN/TURN servers (`config/config.php`):
+
+```php
+'webrtc' => [
+    'stun_servers' => [
+        ['urls' => 'stun:stun.l.google.com:19302'],
+        ['urls' => 'stun:stun1.l.google.com:19302'],
+    ],
+    'turn_servers' => [
+        // ['urls' => 'turn:your-turn-server.com:3478', 'username' => 'user', 'credential' => 'pass'],
+    ],
+],
+```
+
+On Radmin VPN the peers can reach each other directly, so local ICE candidates are usually enough. Removing the STUN entries saves ~1 s of ICE gathering per connection; only do that if everyone is on the same VPN.
+
+`.env.example` exists for environment-driven setups, but the portable flow does not require a `.env` file.
+
+---
+
+## Commands
+
+```bat
+REM Start everything (host)
+bin\start-host.bat
+
+REM Stop everything started by start-host (only this project's processes)
+bin\stop-host.bat
+
+REM Development mode: PHP on 8000, WebSocket on 8182, no Caddy/HTTPS
+bin\start-dev.bat
+
+REM Logs
+type logs\http.log
+type logs\websocket.log
+type logs\websocket-error.log
+type logs\caddy.log
+type logs\mysql.log
+
+REM Wipe saved user data (preferences, created rooms, sessions) back to first-run state
+bin\reset-user-data.bat
+
+REM Database console (prompts for the password of the app user)
+portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u grape -p grape_calls
+
+REM Re-apply schema migrations (start-host does this automatically)
+portable\php\php.exe database\migrate.php
+
+REM Certificates
+deploy\ca\install-ca.bat             REM host: trust the CA and build the guest installer
+deploy\ca\install-ca.bat /silent     REM same, no prompts (used by start-host)
+deploy\ca\test-https.bat <IP>        REM diagnose trust on any PC
+deploy\ca\remove-ca.bat              REM undo the trust
+deploy\ca\make-guest-installer.bat   REM regenerate dist\install-ca.bat
+```
+
+---
+
+## Database
+
+The database and schema are created by `bin\start-host.bat` on first run, using the credentials from `config/local.php`. For a fresh database or another server:
+
+```sql
+CREATE DATABASE grape_calls CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'grape'@'127.0.0.1' IDENTIFIED BY 'uma-senha-longa-e-aleatoria';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER
+    ON grape_calls.* TO 'grape'@'127.0.0.1';
+FLUSH PRIVILEGES;
+```
+
+```bat
+REM prompts for the password set above
+portable\mariadb\bin\mariadb.exe -h 127.0.0.1 -u grape -p grape_calls < database\schema.sql
+```
+
+`database/schema.sql` is the canonical schema; `database/migrate.php` applies small idempotent upgrades to existing databases (currently: `room_participants.avatar_data` widened to `MEDIUMTEXT`, `rooms.is_locked` added). Back up by stopping MariaDB and copying `portable\mariadb\data`.
+
+> The `portable\mariadb\data` directory holds the database files, including the password hashes from `mysql.global_priv`. It is machine-specific and must never be redistributed — `bin\start-host.bat` initializes a fresh one when it is missing.
+
+---
+
+## Project structure
+
+```
+grape-new/
+├── public/                  # Only web-exposed folder (DocumentRoot)
+│   ├── index.php            # Home
+│   ├── room.php             # Call room
+│   ├── api/rooms/           # REST API (create, join, leave, status)
+│   └── assets/css|js/       # Styles and ES modules
+├── src/                     # PHP code (PSR-4: GamingCalls\)
+│   ├── Config/  Database/  Models/  Server/  Session/  Support/
+│   └── Support/Url.php      # Asset/WebSocket URLs derived from the request
+├── config/                  # config.php + local.php (overrides, not versioned)
+├── database/                # schema.sql + migrate.php
+├── server/websocket-server.php
+├── bin/                     # start-host.bat, start-dev.bat, reset-user-data.bat
+├── data/sessions/           # Isolated PHP session files (wiped by the reset)
+├── deploy/                  # Caddyfile, ca/ (certificates), nginx/systemd samples
+│   └── ca/                  # install-ca, remove-ca, test-https, guest installer
+├── docs/                    # Startup guide, certificates, testing, hosting notes
+├── portable/                # PHP, MariaDB, Caddy, Composer (no installation)
+├── logs/                    # Service logs (http, websocket, caddy, mysql)
+├── vendor/                  # Composer dependencies
+├── .env.example
+├── composer.json
+└── README.md
+```
+
+---
+
+## Architecture
+
+### Backend (PHP)
+- **REST API**: room creation, joining, leaving, status
+- **WebSocket server**: real-time signaling for WebRTC (SDP, ICE candidates), chat and host moderation commands (mute / camera / kick), authorized against the room creator's session id
+- **Database**: rooms and participants persistence (MariaDB/MySQL)
+- **Sessions**: PHP sessions for server-side identification
+- **Caddy**: TLS termination and `/ws` reverse proxy to the WebSocket server
+
+### Frontend (Vanilla JS)
+- **WebRTC**: peer-to-peer audio/video/screen
+- **Media APIs**: camera, microphone, screen capture
+- **Modular ES6**: clean separation of concerns, no frameworks
+
+### Signaling flow
+1. User joins the room through the REST API.
+2. The browser opens a WebSocket (same-origin `wss://<host>/ws`; falls back to `ws://<host>:8182` on HTTP pages).
+3. The server notifies the other participants and returns the participant list.
+4. WebRTC peer connections are created (mesh topology).
+5. SDP offers/answers and ICE candidates are exchanged over the WebSocket.
+6. Media flows directly between peers (mesh); signaling never carries media.
+
+---
+
+## Performance notes
+
+Measured on the reference machine after the current tuning:
+
+| Item | Value |
+|---|---|
+| 10 requests to the home page (through Caddy) | ~0.9 s |
+| Home page TTFB | 20–50 ms |
+| Room page full load | ~350 ms |
+| WebSocket reconnect after the server returns | ~1 s |
+| ICE gathering with the default STUN servers | ~1.1 s |
+
+- `opcache` is enabled for CLI in `portable/php/php.ini` (`opcache.enable_cli=1`) — this is what keeps the PHP built-in server fast.
+- `bin\start-host.bat` warms the server (two requests) so the first guest does not hit a cold process.
+- The client reconnects with a 300 ms → 5 s backoff and retries immediately when the tab regains focus or the network returns.
+- `php -S` is **single-threaded** (one request at a time): fine for ~10 participants, not a replacement for Nginx/Apache.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `start-host.bat` closes instantly | a port is already in use by a previous run | the console now pauses with the error; close the old service windows or `taskkill /F /IM php.exe` |
+| HTTP/HTTPS works but the room stays on "Reconectando..." | WebSocket unreachable, or the certificate is not trusted | install the CA (`deploy\ca\dist\install-ca.bat`) and restart the browser; run `deploy\ca\test-https.bat <IP>` |
+| Guest: "site is not secure", camera/mic blocked | CA not installed, browser not restarted, HTTP link, or Firefox | see [`docs/CERTIFICADOS.md`](docs/CERTIFICADOS.md) §7.1 |
+| Join fails / room never opens | oversized avatar was rejected by the database | fixed: column is `MEDIUMTEXT`, migration runs at startup, and the browser downscales photos to 256 px (accepts up to 5 MB) |
+| Camera fails with "Could not start video source" | the saved camera id no longer exists, or another app holds the device | handled: the client validates the saved id, falls back to any camera and shows a PT-BR message; close OBS/Zoom/Discord if it persists |
+| Everything loads slowly the first time | cold PHP process / no opcache | already handled (opcache + warm-up); worst case restart `start-host.bat` |
+| Media does not connect although chat works | NAT/ICE, not the WebSocket | same VPN should be enough; otherwise configure TURN in `config/config.php` |
+| XAMPP's Apache holds port 8443 | Apache answers instead of Caddy | stop Apache (`taskkill /F /IM httpd.exe`) or disable its service |
+
+Full startup guide: [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md).
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/GUIA-INICIALIZACAO.md`](docs/GUIA-INICIALIZACAO.md) | Startup guide, checklists, performance, change history (Portuguese) |
+| [`docs/CERTIFICADOS.md`](docs/CERTIFICADOS.md) | HTTPS, local CA, guest installer, diagnostics (Portuguese) |
+| [`deploy/ca/README.md`](deploy/ca/README.md) | Certificate scripts reference (Portuguese) |
+| [`docs/LOCAL_HOSTING.md`](docs/LOCAL_HOSTING.md) | Radmin VPN hosting and Windows Firewall |
+| [`docs/TESTING.md`](docs/TESTING.md) | Manual test script |
+| [`docs/HTTPS_RADMIN.md`](docs/HTTPS_RADMIN.md) | HTTPS over Radmin VPN notes |
+
+---
+
+## Limitations & known issues
+
+1. **Mesh topology**: full mesh WebRTC. Above ~6 participants, consider an SFU (mediasoup/LiveKit).
+2. **No recording**: no built-in recording.
+3. **No chat persistence**: chat messages are not stored.
+4. **Single room per user**.
+5. **Browser support**: modern browser with WebRTC; Firefox needs the CA imported manually.
+6. **No public exposure**: services listen on `0.0.0.0` but are meant for the Radmin VPN only. Do not expose `8181`/`8182` to the internet.
+7. **Single-threaded PHP server**: adequate for small rooms, not a production web server.
+8. **TURN for hostile NATs**: STUN covers most cases; otherwise configure TURN.
+
+---
+
+## Recent changes
+
+**Moderation & rooms**
+- Host moderation: per-participant menu (mute with audible state sync, force camera off, kick with no auto-reconnect) and "mute all" in the participant list; non-hosts get `NOT_HOST` if they forge commands.
+- Room code badge next to the room name in the header — click to copy.
+- `rooms.is_locked` column added (server-side capability for future "lock room" UI).
+
+**Multi Screen**
+- Up to 4 simultaneous screen shares in an adaptive 16:9 gallery: 1 centered, 2 side-by-side, 3 as 2 + 1, and 4 in a strict 2×2 grid, with no scroll or overflow.
+- Compact **Add Screen** button in the bottom-right corner opens a live picker of participants currently sharing; it is limited to 4 screens.
+- Double-click a tile for focus mode (~57% of the viewport width, dark backdrop, `Esc` or click outside to close); the gallery geometry is restored exactly.
+- The participant tag on each tile opens that participant's individual screen tab. Removing a tile only removes it from the gallery — the real share keeps running.
+
+**Sound design**
+- Customizable cues on the home page: `join.mp3`, `exit-call.mp3`, `mute.wav`, `unmute.wav` and `screen.mp3` (share start); `live-close.mp3` (share end) and `message.mp3` (chat) keep their defaults.
+- Each sound can be previewed, replaced with an audio file up to 5 MB, or removed to restore the default; uploads are validated before being saved.
+- Custom audio lives only in this browser's **IndexedDB** (`grape_room_sounds`) and is shared by the home page and the room on the same origin; it is not sent to the server or synced to other devices.
+- All cues play at 35% volume and respect the room's notification mute.
+
+**Interface**
+- Compact mode: full minimalist redesign (flat surfaces, neutral palette, no glass/gradients) applied to the home and the room via the shared theme; toggle on the home profile and in the room settings.
+- Floating camera over a screen share: resizable from all four corners keeping 16:9 (150–640 px, persisted), hover-only corner handles, close button back in the corner.
+- Modal scrolling moved into the body so the scrollbar never cuts the rounded corners.
+
+**Data & preferences**
+- Preferences now persist server-side per browser (`grape_pref` cookie + `user_preferences` table), localStorage first; the avatar color palette was removed (solid default).
+- "Apagar meus dados" (red button, index settings modal) wipes preferences, created rooms, sessions **and custom notification sounds** back to first-run state; `bin\reset-user-data.bat` wipes the server-side data.
+- PHP sessions moved to `data/sessions` so the reset can wipe them without touching the system temp.
+- Photo limit raised to 5 MB with a 15 s decode timeout; photos are still downscaled to 256 px JPEG before storing.
+- Camera opening now validates the saved device id and falls back (720p → 480p → any camera) with PT-BR error messages.
+
+**Portable runtime**
+- Project now ships PHP, MariaDB, Caddy and Composer in `portable/`; `start-host.bat` needs no installation and only falls back to `PATH` if a folder is missing.
+- Bundled database starts initialized, and `database/migrate.php` runs at startup.
+
+**HTTPS / certificates**
+- The host trusts the Caddy CA automatically (current-user store, no administrator).
+- Guests receive a **single** `install-ca.bat` with the certificate embedded — no `.crt` to send around.
+- Added `test-https.bat` (trust diagnostics) and `remove-ca.bat`.
+
+**Reliability**
+- `avatar_data` widened to `MEDIUMTEXT`; the join no longer fails when a profile photo is large.
+- Profile photos are downscaled to 256 px JPEG in the browser (also fixes the 1 MB WebSocket message limit in Ratchet).
+- WebSocket client now tries the same-origin `/ws` proxy and the direct `:8182` endpoint, remembers the working one, keeps retrying instead of giving up, and shows `Reconectando... (n)`.
+- Faster reconnect (300 ms → 5 s backoff) plus immediate retry when the tab regains focus.
+
+**Earlier fixes (multiplayer communication)**
+- Exactly one peer connection per pair of participants, so every participant can publish mic/camera.
+- Screen sharing track replacement/removal handled correctly.
+- `chat-message` broadcast with sender identification, timestamps and 500-character limit.
+- Transactional join (`SELECT ... FOR UPDATE`) enforcing the participant limit.
+
+---
+
+## License
+
+MIT License - see LICENSE file for details.

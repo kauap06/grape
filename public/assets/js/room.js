@@ -1,0 +1,4554 @@
+/**
+ * Gaming Calls Platform - Room Page Logic
+ * Chamada WebRTC com lista de participantes e palco por participante
+ * (câmera e/ou tela de quem está selecionado).
+ */
+
+import { Logger, Toast, Modal, Storage, Devices, Utils, API, SoundStore } from './utils.js';
+
+// ============================================
+// Constantes
+// ============================================
+// Cada conexão entre dois participantes tem 4 "canais" fixos, negociados uma
+// única vez, na ordem abaixo. Assim câmera e tela viajam ao mesmo tempo e o
+// lado que recebe sabe o que é cada trilha só pela posição, sem renegociar.
+const ROLES = ['audio', 'camera', 'screen', 'screenAudio'];
+const ROLE_KINDS = { audio: 'audio', camera: 'video', screen: 'video', screenAudio: 'audio' };
+
+const ICONS = {
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
+  micOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>',
+  screen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+  volumeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>',
+  headphonesOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 14.5-7.1M21 12v2"/><path d="M21 15a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h3v3zM3 15a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H3v3z"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+  volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+};
+
+// ============================================
+// State
+// ============================================
+const state = {
+  // Room info
+  roomId: null,
+  roomName: '',
+  inviteCode: '',
+  inviteUrl: '',
+  maxParticipants: 10,
+
+  // User info
+  sessionId: '',
+  displayName: '',
+  avatar: '',
+
+  // Moderacao (host = quem criou a sala)
+  isHost: false,
+  isLocked: false,
+
+  // Connection
+  ws: null,
+  wsConnected: false,
+  wsReconnectAttempts: 0,
+  maxReconnectAttempts: 5,
+  wsCandidates: [], // URLs tentadas em ordem (porta direta x proxy /ws)
+  wsCandidateIndex: 0,
+  pendingAvatarUpdate: false, // foto reduzida antes do 'joined'
+  connection: 'connecting', // connecting | connected | disconnected
+  joinedAt: null,
+
+  // WebRTC
+  peers: new Map(), // sessionId -> peer (ver createPeerConnection)
+  localStream: null,
+  screenStream: null,
+
+  // Estado de mídia local (também enviado aos demais)
+  media: {
+    microphoneMuted: false,
+    cameraMuted: true,
+    screenShare: false
+  },
+
+  // Mute autoritativo vindo do servidor: UNMUTED | SELF_MUTED | HOST_MUTED.
+  // `muteBy` guarda quem aplicou (sessionId) e `muteSeq` descarta eventos
+  // repetidos ou fora de ordem.
+  muteState: 'UNMUTED',
+  muteBy: null,
+  muteSeq: 0,
+
+  // Chat: contagem de mensagens não lidas e se o chat está aberto/visível.
+  chatUnread: 0,
+  chatViewed: false,
+
+  // Atividade de áudio (ativo falante): sessionIds com áudio detectado no momento.
+  audioActive: new Set(),
+  audioMonitors: new Map(), // sessionId -> { analyser, source }
+  audioCtx: null, // ÁudioContext compartilhado (Web Audio API)
+
+  // "Ensurdecer": silencia toda a saída de áudio (como no Discord).
+  // Também muta o microfone e, ao desfazer, devolve o microfone ao que estava.
+  deafened: false,
+  micMutedBeforeDeafen: null,
+
+  // Participantes
+  participants: new Map(), // sessionId -> dados do servidor
+  order: [], // sessionIds na ordem de exibição
+
+  // O que está no palco
+  view: {
+    sessionId: null,
+    tab: 'camera', // camera | screen
+    grid: false, // visão em blocos de todos os participantes
+    split: false, // câmera e tela lado a lado
+    manual: false, // o usuário já escolheu alguém?
+    tabPref: new Map(), // sessionId -> aba escolhida manualmente
+    // Várias telas: grade dinâmica com as telas escolhidas pelo usuário.
+    // `participants` guarda a ordem; o estado sobrevive à troca de abas.
+    multi: createMultiState()
+  },
+
+  // Câmera flutuante sobre a tela (posição como fração do espaço livre: 1,1 = canto inferior direito)
+  camPos: { x: 1, y: 1 },
+  camHidden: new Set(), // participantes cuja câmera flutuante eu fechei
+
+  // Settings
+  settings: {
+    videoQuality: 'auto',
+    maxBitrate: 2500,
+    frameRate: 30,
+    noiseSuppression: true,
+    echoCancellation: true
+  }
+};
+
+const elements = {};
+let webrtcConfig = null;
+let timerHandle = null;
+let selfCameraCache = null; // { track, stream }
+const blockedMedia = new Set(); // elementos cujo autoplay foi bloqueado
+
+// Verifica se a API MediaDevices está disponível (requer contexto seguro: HTTPS ou localhost)
+const hasMediaDevices = !!navigator.mediaDevices;
+const hasScreenShare = hasMediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function';
+
+// Mensagem explicando o motivo real quando a API não existe
+function mediaUnavailableMessage(what) {
+  if (!window.isSecureContext) {
+    return `${what} exige uma conexão segura (HTTPS)`;
+  }
+  return `${what} não é suportado neste navegador. Tente Chrome, Edge ou Firefox`;
+}
+
+// Janela separada (nativa do sistema) com vídeo e tela
+const popout = {
+  mode: null,     // 'document' | 'video' | null
+  win: null,      // janela do Document Picture-in-Picture
+  host: null,     // raiz criada dentro da janela
+  controls: {},   // botões clonados para dentro da janela
+  nameEl: null
+};
+
+// ============================================
+// Initialization
+// ============================================
+document.addEventListener('DOMContentLoaded', async () => {
+  Logger.log('Room page initializing...');
+
+  const cfg = window.APP_CONFIG;
+  if (cfg) {
+    state.roomId = cfg.room?.id;
+    state.roomName = cfg.room?.name || '';
+    state.inviteCode = cfg.room?.inviteCode || '';
+    state.inviteUrl = cfg.room?.joinUrl || '';
+    state.maxParticipants = cfg.room?.maxParticipants || 10;
+    state.sessionId = cfg.user?.sessionId || '';
+    state.displayName = cfg.user?.displayName || '';
+    state.avatar = cfg.user?.avatar || '';
+  }
+  if (!state.inviteUrl) state.inviteUrl = window.location.href;
+
+  // O perfil (nome/avatar) fica salvo no navegador; a sessão PHP não o conhece.
+  const profile = Storage.get('profile', {});
+
+  // Modo compacto escolhido na home (ou aqui): aplica o visual minimalista
+  // também nesta tela, que compartilha a mesma chave de preferência.
+  const uiPrefs = Storage.get('uiPreferences', {});
+  state.displayName = ((profile.displayName || state.displayName || '').trim()) || 'Jogador';
+  state.avatar = serializeAvatar(profile.avatar) || state.avatar;
+  state.view.split = !!Storage.get('roomView', {}).split;
+  const savedPos = Storage.get('cameraPos', null);
+  if (savedPos && isFinite(savedPos.x) && isFinite(savedPos.y)) state.camPos = savedPos;
+
+  cacheElements();
+  // Depois de cacheElements: aplica o visual e deixa o interruptor no mesmo
+  // estado (antes disso o checkbox ainda não existia e ficava dessincronizado).
+  setCompactMode(!!uiPrefs.compactMode, true);
+  loadSettings();
+  // Não atrasa a entrada na sala se o IndexedDB estiver lento/indisponível.
+  await Promise.race([
+    loadCustomSounds(),
+    new Promise(resolve => setTimeout(resolve, 1500))
+  ]);
+  setupEventListeners();
+  setupMediaSession();
+  setupFloatingCamera();
+  setupCameraResize();
+  setupMultiWorkspace();
+  updateMediaButtons();
+  renderAll();
+  setupMediaDevices();
+  initializeWebSocket();
+  initializeLocalMedia();
+
+  // Voltar para a aba (ou reconectar a rede) tenta na hora, sem esperar o backoff
+  const retryNow = () => {
+    if (state.wsConnected) return;
+    state.wsReconnectAttempts = 0;
+    initializeWebSocket();
+  };
+  window.addEventListener('online', retryNow);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) retryNow();
+  });
+  // Roda em segundo plano: nunca atrasa a conexão (uma foto grande pode
+  // demorar para decodificar) e avisa a sala quando terminar.
+  shrinkStoredAvatar();
+
+  Modal.init();
+
+  Logger.log('Room page ready');
+});
+
+// ---- Avatares -------------------------------------------------------------
+// Avatares salvos antes desta correção podem ter centenas de KB (ou mais).
+// O servidor WebSocket recusa mensagens acima de 1MB e o join nunca era
+// confirmado; aqui a foto antiga é reduzida e reenviada à sala.
+async function shrinkStoredAvatar() {
+  const avatar = state.avatar;
+  const isPhoto = typeof avatar === 'string' && avatar.startsWith('data:image/');
+  if (!isPhoto || avatar.length <= 200 * 1024) return;
+
+  const reduced = await Utils.shrinkImageDataUrl(avatar);
+  if (!reduced || reduced === avatar || reduced.length >= avatar.length) return;
+
+  state.avatar = reduced;
+  const profile = Storage.get('profile', {});
+  Storage.set('profile', { ...profile, avatar: { type: 'custom', data: reduced } });
+  renderAll();
+  Logger.log(`Avatar antigo reduzido de ${avatar.length} para ${reduced.length} bytes`);
+
+  // Atualiza a sala com a versão leve (se já entrou)
+  if (state.wsConnected) {
+    sendWebSocketMessage('profile-update', {
+      display_name: state.displayName,
+      avatar_data: reduced
+    });
+  } else {
+    state.pendingAvatarUpdate = true;
+  }
+}
+
+// O avatar viaja no 'join'; acima de 1MB o servidor fecha a conexão, então
+// manda a sala sem foto primeiro e completa depois com o profile-update.
+function avatarForJoin() {
+  const avatar = state.avatar;
+  if (typeof avatar !== 'string') return '';
+  return avatar.length <= 200 * 1024 ? avatar : '';
+}
+
+// ---- Avatares -------------------------------------------------------------
+// O servidor guarda o avatar como texto: data URL (foto) ou JSON {type:'gradient', color}.
+function serializeAvatar(avatar) {
+  if (!avatar) return '';
+  if (typeof avatar === 'string') return avatar;
+  if (avatar.type === 'custom' && avatar.data) {
+    return avatar.data;
+  }
+  if (avatar.type === 'gradient' && avatar.color) return JSON.stringify(avatar);
+  return '';
+}
+
+function parseAvatar(data) {
+  if (!data) return null;
+  if (typeof data === 'object') return data;
+  if (typeof data === 'string') {
+    if (data.startsWith('data:image/')) return { type: 'custom', data };
+    try {
+      const parsed = JSON.parse(data);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Retorna { html, style } para preencher um elemento .user-avatar
+function avatarParts(avatarData, displayName) {
+  const avatar = parseAvatar(avatarData);
+  const initial = displayName ? escapeHtml(displayName.trim()[0]?.toUpperCase() || '?') : '?';
+  if (avatar?.type === 'custom' && /^data:image\//.test(avatar.data || '')) {
+    return { html: `<img src="${escapeAttr(avatar.data)}" alt="">`, style: '' };
+  }
+  if (avatar?.type === 'gradient' && /^#[0-9a-f]{3,8}$/i.test(avatar.color || '')) {
+    return { html: initial, style: `background:${avatar.color};color:#fff;` };
+  }
+  return { html: initial, style: '' };
+}
+
+function setAvatar(el, avatarData, name) {
+  const parts = avatarParts(avatarData, name);
+  el.innerHTML = parts.html;
+  el.style.cssText = parts.style;
+}
+
+function avatarHtml(participant, extraClass = '') {
+  const parts = avatarParts(participant.avatar_data, participant.display_name);
+  return `<div class="user-avatar ${extraClass}" style="${escapeAttr(parts.style)}">${parts.html}</div>`;
+}
+
+// Avatar do cabeçalho na visão em grade: uma pilha com 2 participantes
+// sorteados (ou só um, quando a sala tem uma pessoa só).
+let groupAvatarSig = '';
+let groupAvatarPool = [];
+let groupAvatarKey = '';
+
+function groupAvatarPicks(count) {
+  const ids = state.order.filter(id => state.participants.has(id));
+  const key = ids.join('|');
+  if (key !== groupAvatarKey) {
+    groupAvatarKey = key;
+    groupAvatarPool = ids.slice();
+    for (let i = groupAvatarPool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [groupAvatarPool[i], groupAvatarPool[j]] = [groupAvatarPool[j], groupAvatarPool[i]];
+    }
+  }
+  return groupAvatarPool.filter(id => state.participants.has(id)).slice(0, count);
+}
+
+function renderGroupAvatar() {
+  const el = elements.viewingAvatar;
+  if (!el) return;
+
+  const picks = groupAvatarPicks(2);
+  const sig = picks.map(id => {
+    const p = state.participants.get(id);
+    return `${id}:${p?.display_name || ''}:${(p?.avatar_data || '').length}`;
+  }).join('|');
+  if (sig === groupAvatarSig) return;
+  groupAvatarSig = sig;
+
+  el.classList.toggle('is-stack', picks.length > 1);
+  if (picks.length > 1) {
+    el.style.cssText = '';
+    el.innerHTML = picks.map(id => avatarHtml(state.participants.get(id))).join('');
+  } else if (picks.length === 1) {
+    const p = state.participants.get(picks[0]);
+    setAvatar(el, p.avatar_data, p.display_name);
+  } else {
+    el.innerHTML = '';
+    el.style.cssText = '';
+  }
+}
+
+function cacheElements() {
+  const $ = (id) => document.getElementById(id);
+
+  elements.room = $('room');
+  elements.side = $('side');
+  elements.sideOverlay = $('side-overlay');
+  elements.sideToggle = $('side-toggle');
+  elements.sideClose = $('side-close');
+  elements.roomName = $('room-name');
+  elements.statusDot = $('status-dot');
+  elements.statusText = $('call-status-text');
+  elements.leaveRoomBtn = $('leave-room-btn');
+
+  elements.sideTabs = document.querySelectorAll('.side-tab');
+  elements.panelPeople = $('panel-people');
+  elements.panelChat = $('panel-chat');
+  elements.participantCount = $('participant-count-value');
+  elements.participantsList = $('participants-list');
+  elements.roomCode = $('room-code');
+
+  elements.chatMessages = $('chat-messages');
+  elements.chatForm = $('chat-form');
+  elements.chatInput = $('chat-input');
+
+  // Auto-resize chat textarea
+  function autoResizeTextarea() {
+    const textarea = elements.chatInput;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const maxHeight = 160; // max-height in px
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+  }
+
+  elements.chatInput?.addEventListener('input', autoResizeTextarea);
+  elements.chatInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      elements.chatForm?.dispatchEvent(new Event('submit'));
+    }
+  });
+
+  elements.stageCard = $('stage-card');
+  elements.stage = $('stage');
+  elements.viewingAvatar = $('viewing-avatar');
+  elements.viewingName = $('viewing-name');
+  elements.viewTabs = $('view-tabs');
+  elements.viewTabCamera = $('view-tab-camera');
+  elements.viewTabScreen = $('view-tab-screen');
+  elements.viewTabGrid = $('view-tab-grid');
+  elements.multiTabSlot = $('multi-tab-slot');
+  elements.viewTabMulti = $('view-tab-multi');
+  elements.multiTabClose = $('multi-tab-close');
+  elements.multiBtn = $('multi-btn');
+  elements.stageGrid = $('stage-grid');
+  elements.fullscreenBtn = $('fullscreen-btn');
+  elements.popoutBtn = $('popout-btn');
+  elements.popinBtn = $('popin-btn');
+  elements.stageDetached = $('stage-detached');
+  elements.camRestore = $('cam-restore');
+  elements.panes = {
+    camera: { pane: $('pane-camera'), video: $('video-camera'), empty: $('empty-camera') },
+    screen: { pane: $('pane-screen'), video: $('video-screen'), empty: $('empty-screen') }
+  };
+  elements.multiGrid = $('multi-grid');
+  elements.multiPicker = $('multi-picker');
+  elements.multiPickerPanel = $('multi-picker-panel');
+  elements.multiAddWrap = $('multi-add-wrap');
+  elements.multiAddBtn = $('multi-add-btn');
+  elements.multiEmpty = $('multi-empty');
+  elements.stageHead = document.querySelector('.stage-head');
+
+  elements.toggleMicBtn = $('toggle-mic-btn');
+  elements.toggleDeafenBtn = $('toggle-deafen-btn');
+  elements.toggleNotifBtn = $('toggle-notif-btn');
+  elements.toggleCameraBtn = $('toggle-camera-btn');
+  elements.toggleScreenBtn = $('toggle-screen-btn');
+  elements.leaveCallBtn = $('leave-call-btn');
+  elements.layoutBtn = $('layout-btn');
+  elements.callSettingsBtn = $('call-settings-btn');
+
+  elements.personMenu = $('person-menu');
+  elements.audioSink = $('audio-sink');
+
+  // Settings modal
+  elements.settingsClose = $('settings-close');
+  elements.settingsCancel = $('settings-cancel');
+  elements.settingsSave = $('settings-save');
+  elements.cameraSelect = $('camera-select');
+  elements.micSelect = $('mic-select');
+  elements.speakerSelect = $('speaker-select');
+  elements.roomDeviceList = $('room-device-list');
+  elements.roomDevicesSummary = $('room-devices-summary');
+  elements.roomDevicesRefreshBtn = $('room-devices-refresh-btn');
+  elements.roomDevicePermissionRow = $('room-device-permission-row');
+  elements.roomDevicePermissionBtn = $('room-device-permission-btn');
+  elements.videoQuality = $('video-quality');
+  elements.maxBitrate = $('max-bitrate');
+  elements.maxBitrateValue = $('max-bitrate-value');
+  elements.frameRate = $('frame-rate');
+  elements.noiseSuppression = $('noise-suppression');
+  elements.echoCancellation = $('echo-cancellation');
+
+  // Aba de perfil
+  elements.settingsTabs = document.querySelectorAll('.settings-tab');
+  elements.profileName = $('profile-name');
+  elements.profileNameCount = $('profile-name-count');
+  elements.profileAvatarPreview = $('profile-avatar-preview');
+  elements.profilePhotoBtn = $('profile-photo-btn');
+  elements.profilePhotoRemove = $('profile-photo-remove');
+  elements.profilePhotoInput = $('profile-photo-input');
+  elements.compactMode = $('room-compact-mode');
+  elements.muteAllBtn = $('mute-all-btn');
+
+  if (elements.roomName) elements.roomName.textContent = state.roomName;
+}
+
+/**
+ * Liga/desliga o modo compacto. A preferência é compartilhada com a home
+ * (mesma chave uiPreferences), então a escolha vale nas duas telas.
+ */
+function setCompactMode(enabled, silent = false) {
+  document.body.classList.toggle('is-compact', enabled);
+  document.body.classList.toggle('no-animations', enabled);
+  if (elements.compactMode) elements.compactMode.checked = enabled;
+  if (silent) return;
+  const ui = Storage.get('uiPreferences', {});
+  Storage.set('uiPreferences', {
+    ...ui,
+    compactMode: enabled,
+    animationsEnabled: enabled ? false : (ui.compactSnapshot?.animationsEnabled ?? true)
+  });
+}
+function setupEventListeners() {
+  // Sidebar
+  elements.leaveRoomBtn?.addEventListener('click', leaveRoom);
+  elements.sideToggle?.addEventListener('click', () => toggleSide(true));
+  elements.sideClose?.addEventListener('click', () => toggleSide(false));
+  elements.sideOverlay?.addEventListener('click', () => toggleSide(false));
+  elements.sideTabs.forEach(tab => tab.addEventListener('click', () => showSidePanel(tab.dataset.panel)));
+  elements.roomCode?.addEventListener('click', copyRoomCode);
+  elements.chatForm?.addEventListener('submit', sendChatMessage);
+
+  // Lista de participantes (delegação)
+  elements.participantsList?.addEventListener('click', (e) => {
+    const menuBtn = e.target.closest('[data-menu]');
+    if (menuBtn) {
+      e.stopPropagation();
+      openPersonMenu(menuBtn.dataset.menu, menuBtn);
+      return;
+    }
+    const row = e.target.closest('[data-select]');
+    if (row) selectParticipant(row.dataset.select);
+  });
+
+  // Menu do participante
+  elements.personMenu?.addEventListener('click', handleMenuClick);
+  document.addEventListener('click', (e) => {
+    if (!elements.personMenu.hidden && !e.target.closest('#person-menu') && !e.target.closest('[data-menu]')) {
+      closePersonMenu();
+    }
+    // Seletor do Várias telas: fecha ao clicar fora (ou no próprio botão)
+    if (state.view.multi.pickerOpen &&
+        !e.target.closest('#multi-picker') &&
+        !e.target.closest('#multi-add-wrap') &&
+        !e.target.closest('#multi-btn')) {
+      closeMultiPicker();
+    }
+  });
+
+  // Palco
+  elements.viewTabs?.addEventListener('click', (e) => {
+    const tab = e.target.closest('[data-view]');
+    if (tab) setViewTab(tab.dataset.view);
+  });
+  elements.multiTabClose?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeMultiWorkspace();
+  });
+  elements.stage?.addEventListener('dblclick', (e) => {
+    if (!isMultiActive()) return;
+    if (e.target.closest('[data-multi-remove]') || e.target.closest('[data-multi-open]')) return;
+    const tile = e.target.closest('[data-multi-tile]');
+    if (!tile) return;
+    e.preventDefault();
+    openMultiFocus(tile.dataset.multiTile);
+  });
+  // Qualquer clique fora do cartão em foco fecha o modo de foco, inclusive
+  // no cabeçalho, na lateral ou na barra inferior. Dentro do cartão, não.
+  document.addEventListener('click', (e) => {
+    if (!multiFocus || multiFocus.closing) return;
+    if (e.target.closest('.multi-focus-card')) return;
+    closeMultiFocus();
+  });
+  elements.stage?.addEventListener('click', (e) => {
+    // Seletor do Várias telas
+    if (e.target === elements.multiPicker) { closeMultiPicker(); return; }
+    const multiAction = e.target.closest('[data-multi-action]')?.dataset.multiAction;
+    if (multiAction === 'close-picker') { closeMultiPicker(); return; }
+    const multiSelect = e.target.closest('[data-multi-select]');
+    if (multiSelect) { selectMultiParticipant(multiSelect.dataset.multiSelect); return; }
+    const multiOpen = e.target.closest('[data-multi-open]');
+    if (multiOpen) { openMultiParticipantView(multiOpen.dataset.multiOpen); return; }
+    const multiRemove = e.target.closest('[data-multi-remove]');
+    if (multiRemove) { removeMultiParticipant(multiRemove.dataset.multiRemove); return; }
+    const multiTile = e.target.closest('[data-multi-tile]');
+    if (multiTile && isMultiActive()) {
+      focusMultiParticipant(multiTile.dataset.multiTile);
+      return;
+    }
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'toggle-camera') toggleCamera();
+    if (action === 'toggle-screen') toggleScreenShare();
+    if (action === 'hide-camera') setCamHidden(true);
+    if (action === 'show-camera') setCamHidden(false);
+    const block = e.target.closest('[data-grid-select]');
+    if (block) selectParticipant(block.dataset.gridSelect);
+  });
+  elements.fullscreenBtn?.addEventListener('click', toggleFullscreen);
+  elements.popoutBtn?.addEventListener('click', togglePopout);
+  elements.multiBtn?.addEventListener('click', onMultiButton);
+  elements.multiAddBtn?.addEventListener('click', onMultiAddButton);
+  elements.popinBtn?.addEventListener('click', closePopout);
+  if (popoutSupported()) elements.popoutBtn.hidden = false;
+
+  // Controles
+  elements.toggleMicBtn?.addEventListener('click', toggleMicrophone);
+  elements.toggleDeafenBtn?.addEventListener('click', toggleDeafen);
+  elements.toggleNotifBtn?.addEventListener('click', toggleNotifications);
+  updateNotifButton();
+  elements.toggleCameraBtn?.addEventListener('click', toggleCamera);
+  elements.toggleScreenBtn?.addEventListener('click', toggleScreenShare);
+  elements.leaveCallBtn?.addEventListener('click', leaveRoom);
+  elements.layoutBtn?.addEventListener('click', toggleSplit);
+  elements.callSettingsBtn?.addEventListener('click', () => openSettings());
+
+  // Settings modal
+  elements.settingsClose?.addEventListener('click', () => Modal.close('settings-modal'));
+  elements.settingsCancel?.addEventListener('click', () => Modal.close('settings-modal'));
+  elements.settingsSave?.addEventListener('click', saveSettings);
+  elements.roomDevicesRefreshBtn?.addEventListener('click', () => refreshMediaDevices({ announce: true }));
+  elements.roomDevicePermissionBtn?.addEventListener('click', requestRoomDevicePermission);
+  [elements.cameraSelect, elements.micSelect, elements.speakerSelect].forEach(select => {
+    select?.addEventListener('change', renderRoomDeviceList);
+  });
+  elements.settingsTabs?.forEach(tab => tab.addEventListener('click', () => switchSettingsTab(tab.dataset.tab)));
+  elements.profileName?.addEventListener('input', onProfileNameInput);
+  elements.profilePhotoBtn?.addEventListener('click', () => elements.profilePhotoInput?.click());
+  elements.profilePhotoInput?.addEventListener('change', onProfilePhotoSelected);
+  elements.profilePhotoRemove?.addEventListener('click', removeProfilePhoto);
+  elements.compactMode?.addEventListener('change', () => {
+    setCompactMode(elements.compactMode.checked);
+  });
+  elements.muteAllBtn?.addEventListener('click', () => sendWebSocketMessage('admin-mute-all', {}));
+  elements.maxBitrate?.addEventListener('input', (e) => {
+    if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${e.target.value} kbps`;
+  });
+  elements.noiseSuppression?.addEventListener('change', (e) => {
+    state.settings.noiseSuppression = e.target.checked;
+  });
+  elements.echoCancellation?.addEventListener('change', (e) => {
+    state.settings.echoCancellation = e.target.checked;
+  });
+
+  // Window events
+  window.addEventListener('beforeunload', cleanup);
+  window.addEventListener('resize', closePersonMenu);
+  document.addEventListener('keydown', handleKeyboardShortcuts);
+
+  // Se o navegador bloqueou o autoplay de algum áudio/vídeo, o primeiro clique libera
+  document.addEventListener('click', unlockMedia);
+  document.addEventListener('keydown', unlockMedia);
+  // Resume o AudioContext do ativo falante na primeira interação do usuário
+  // (exigido por navegadores antes de permitir processamento de áudio).
+  document.addEventListener('click', ensureAudioContextRunning, { once: true });
+  document.addEventListener('keydown', ensureAudioContextRunning, { once: true });
+
+  // Menu overflow do dock (mais opções)
+  const dockMoreBtn = document.getElementById('dock-more-btn');
+  const dockOverflowMenu = document.getElementById('dock-overflow-menu');
+  if (dockMoreBtn && dockOverflowMenu) {
+    dockMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = !dockOverflowMenu.hidden;
+      dockOverflowMenu.hidden = open;
+      dockMoreBtn.setAttribute('aria-expanded', String(!open));
+    });
+    document.addEventListener('click', (e) => {
+      if (!dockOverflowMenu.hidden && !dockOverflowMenu.contains(e.target) && e.target !== dockMoreBtn) {
+        dockOverflowMenu.hidden = true;
+        dockMoreBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    // Conectar itens do overflow às ações existentes
+    document.getElementById('overflow-layout')?.addEventListener('click', () => {
+      dockOverflowMenu.hidden = true;
+      dockMoreBtn.setAttribute('aria-expanded', 'false');
+      toggleSplit();
+    });
+    document.getElementById('overflow-settings')?.addEventListener('click', () => {
+      dockOverflowMenu.hidden = true;
+      dockMoreBtn.setAttribute('aria-expanded', 'false');
+      openSettings();
+    });
+  }
+}
+
+function handleKeyboardShortcuts(e) {
+  if (e.key === 'Escape') {
+    if (multiFocus) { closeMultiFocus(); return; }
+    if (state.view.multi?.pickerOpen) { closeMultiPicker(); return; }
+    closePersonMenu();
+    toggleSide(false);
+    Modal.closeAll();
+    return;
+  }
+
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+  const key = e.key.toLowerCase();
+  if (e.ctrlKey || e.metaKey) {
+    if (key === 's' && e.shiftKey) {
+      e.preventDefault();
+      toggleScreenShare();
+    }
+    return;
+  }
+  if (e.altKey) return;
+
+  switch (key) {
+    case 'm':
+      e.preventDefault();
+      toggleMicrophone();
+      break;
+    case 'v':
+      e.preventDefault();
+      toggleCamera();
+      break;
+    case 'f':
+      e.preventDefault();
+      toggleFullscreen();
+      break;
+    case 'd':
+      e.preventDefault();
+      toggleDeafen();
+      break;
+    case 'p':
+      if (popoutSupported()) {
+        e.preventDefault();
+        togglePopout();
+      }
+      break;
+  }
+}
+
+function unlockMedia() {
+  if (!blockedMedia.size) return;
+  blockedMedia.forEach(el => {
+    el.play().then(() => blockedMedia.delete(el)).catch(() => {});
+  });
+}
+
+function playMedia(el) {
+  el.play().catch(err => {
+    if (err?.name === 'NotAllowedError') blockedMedia.add(el);
+  });
+}
+
+// ============================================
+// Settings
+// ============================================
+function loadSettings() {
+  const saved = Storage.get('roomSettings', {});
+  state.settings = { ...state.settings, ...saved };
+
+  if (elements.videoQuality) elements.videoQuality.value = state.settings.videoQuality;
+  if (elements.maxBitrate) elements.maxBitrate.value = state.settings.maxBitrate;
+  if (elements.maxBitrateValue) elements.maxBitrateValue.textContent = `${state.settings.maxBitrate} kbps`;
+  if (elements.frameRate) elements.frameRate.value = state.settings.frameRate;
+  if (elements.noiseSuppression) elements.noiseSuppression.checked = state.settings.noiseSuppression;
+  if (elements.echoCancellation) elements.echoCancellation.checked = state.settings.echoCancellation;
+  refreshMediaDevices();
+}
+
+// ---- Dispositivos da sala ------------------------------------------------
+function roomDeviceSelection() {
+  const saved = Storage.get('devices', {});
+  return {
+    cameraId: elements.cameraSelect?.value || saved.cameraId || '',
+    micId: elements.micSelect?.value || saved.micId || '',
+    speakerId: elements.speakerSelect?.value || saved.speakerId || ''
+  };
+}
+
+function roomDeviceSummary(devices) {
+  const counts = [devices.cameras.length, devices.microphones.length, devices.speakers.length];
+  const total = counts[0] + counts[1] + counts[2];
+  if (!total) return 'Nenhum dispositivo visível. Permita o acesso ou conecte um aparelho.';
+  const words = [];
+  if (counts[0]) words.push(counts[0] + (counts[0] === 1 ? ' câmera' : ' câmeras'));
+  if (counts[1]) words.push(counts[1] + (counts[1] === 1 ? ' microfone' : ' microfones'));
+  if (counts[2]) words.push(counts[2] + (counts[2] === 1 ? ' alto-falante' : ' alto-falantes'));
+  return words.join(', ').replace(/, ([^,]*)$/, ' e $1') + (total === 1 ? ' disponível.' : ' disponíveis.');
+}
+
+function renderRoomDeviceList() {
+  if (!elements.roomDeviceList) return;
+  const selection = roomDeviceSelection();
+  Devices.renderList(elements.roomDeviceList, state.availableDevices || {
+    cameras: [], microphones: [], speakers: []
+  }, selection);
+}
+
+async function refreshMediaDevices(options = {}) {
+  const saved = Storage.get('devices', {});
+  const selected = {
+    cameraId: elements.cameraSelect?.value || saved.cameraId || '',
+    micId: elements.micSelect?.value || saved.micId || '',
+    speakerId: elements.speakerSelect?.value || saved.speakerId || ''
+  };
+  try {
+    const devices = await Devices.enumerate();
+    state.availableDevices = devices;
+    Devices.populateSelect(elements.cameraSelect, devices.cameras, selected.cameraId);
+    Devices.populateSelect(elements.micSelect, devices.microphones, selected.micId);
+    Devices.populateSelect(elements.speakerSelect, devices.speakers, selected.speakerId);
+    renderRoomDeviceList();
+    if (elements.roomDevicesSummary) elements.roomDevicesSummary.textContent = roomDeviceSummary(devices);
+    if (elements.roomDevicePermissionRow) {
+      elements.roomDevicePermissionRow.hidden = !Devices.needsPermission(devices);
+    }
+    if (options.announce) Toast.success('Lista de dispositivos atualizada');
+  } catch (e) {
+    Logger.error('Falha ao listar dispositivos:', e);
+    if (elements.roomDevicesSummary) elements.roomDevicesSummary.textContent = 'Não foi possível listar os dispositivos. Tente de novo.';
+  }
+}
+
+async function requestRoomDevicePermission() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    Toast.error('Este navegador não permite acessar câmera e microfone');
+    return;
+  }
+  if (elements.roomDevicePermissionBtn) {
+    elements.roomDevicePermissionBtn.disabled = true;
+    elements.roomDevicePermissionBtn.textContent = 'Liberando…';
+  }
+  let granted = false;
+  for (const constraints of [{ audio: true }, { video: true }]) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream.getTracks().forEach(track => track.stop());
+      granted = true;
+    } catch (e) {
+      Logger.warn('Permissão de dispositivo não concedida:', e);
+    }
+  }
+  await refreshMediaDevices();
+  if (elements.roomDevicePermissionBtn) {
+    elements.roomDevicePermissionBtn.disabled = false;
+    elements.roomDevicePermissionBtn.textContent = 'Permitir acesso';
+  }
+  if (granted) Toast.success('Acesso liberado. Nomes dos dispositivos atualizados');
+  else Toast.warning('O acesso não foi liberado. Os nomes podem aparecer de forma genérica');
+}
+
+async function applySpeakerToElement(audio) {
+  if (!audio || typeof audio.setSinkId !== 'function') return;
+  const deviceId = Storage.get('devices', {}).speakerId || '';
+  try {
+    await audio.setSinkId(deviceId);
+  } catch (e) {
+    // A saída preferida pode ter sido desconectada; o áudio continua na padrão.
+    Logger.warn('Não foi possível usar o alto-falante preferido:', e);
+  }
+}
+
+async function applySpeakerPreference(deviceId) {
+  if (!('setSinkId' in HTMLMediaElement.prototype)) return false;
+  const targets = [...document.querySelectorAll('audio')];
+  if (popoutSupported() && popout.win && !popout.win.closed) {
+    targets.push(...popout.win.document.querySelectorAll('audio'));
+  }
+  let applied = false;
+  for (const audio of targets) {
+    try {
+      await audio.setSinkId(deviceId || '');
+      applied = true;
+    } catch (e) {
+      Logger.warn('Não foi possível trocar o alto-falante:', e);
+    }
+  }
+  return applied;
+}
+
+async function switchInputDevice(kind, deviceId) {
+  const stream = state.localStream;
+  // Sem transmissão ativa não há faixa para trocar; a preferência fica salva
+  // para quando a câmera/microfone for ligado.
+  if (!stream) return true;
+  const oldTrack = kind === 'audio'
+    ? stream.getAudioTracks()[0]
+    : stream.getVideoTracks()[0];
+  if (!oldTrack) return true;
+
+  const constraints = kind === 'audio'
+    ? { audio: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        echoCancellation: state.settings.echoCancellation,
+        noiseSuppression: state.settings.noiseSuppression,
+        autoGainControl: true
+      } }
+    : { video: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: state.settings.frameRate || 30 }
+      } };
+
+  try {
+    const replacement = await navigator.mediaDevices.getUserMedia(constraints);
+    const newTrack = kind === 'audio'
+      ? replacement.getAudioTracks()[0]
+      : replacement.getVideoTracks()[0];
+    if (!newTrack) throw new Error('Dispositivo sem faixa de mídia');
+    newTrack.enabled = oldTrack.enabled;
+
+    stream.removeTrack(oldTrack);
+    stream.addTrack(newTrack);
+    for (const peer of state.peers.values()) {
+      for (const sender of peer.pc.getSenders()) {
+        if (sender.track === oldTrack) {
+          sender.replaceTrack(newTrack).catch(err => Logger.warn('Falha ao trocar faixa:', err));
+        }
+      }
+    }
+    // Descarta as faixas extras que o navegador possa ter aberto.
+    replacement.getTracks().forEach(track => {
+      if (track !== newTrack) track.stop();
+    });
+    oldTrack.stop();
+
+    if (kind === 'audio') {
+      stopAudioMonitor(state.sessionId);
+      startAudioMonitor(state.sessionId, stream);
+    } else {
+      renderStage();
+    }
+    return true;
+  } catch (e) {
+    Logger.error('Falha ao trocar dispositivo:', e);
+    Toast.error(kind === 'audio' ? 'Não foi possível trocar o microfone' : 'Não foi possível trocar a câmera');
+    return false;
+  }
+}
+
+async function applySelectedDevices(previous = {}, next = Storage.get('devices', {})) {
+  const prevMic = previous.micId || '';
+  const prevCamera = previous.cameraId || '';
+  const nextMic = next.micId || '';
+  const nextCamera = next.cameraId || '';
+  const applied = { mic: true, camera: true, speaker: true };
+
+  if (nextMic !== prevMic) applied.mic = await switchInputDevice('audio', nextMic);
+  if (nextCamera !== prevCamera) applied.camera = await switchInputDevice('video', nextCamera);
+  applied.speaker = await applySpeakerPreference(next.speakerId || '');
+  await refreshMediaDevices();
+  if (next.speakerId && !('setSinkId' in HTMLMediaElement.prototype)) {
+    Toast.warning('Este sistema não permite escolher o alto-falante de saída');
+  }
+  return applied;
+}
+
+// ---- Perfil dentro da sala ------------------------------------------------
+// Avatar padrão (sem foto): cor sólida única, sem paleta para escolher
+const DEFAULT_AVATAR = { type: 'gradient', color: '#52525b' };
+const profileDraft = { name: '', avatar: null }; // avatar: objeto {type:'gradient'|'custom', ...}
+
+function openSettings(tab = 'profile') {
+  resetProfileDraft();
+  // O interruptor sempre reflete o que está aplicado na tela.
+  if (elements.compactMode) {
+    elements.compactMode.checked = document.body.classList.contains('is-compact');
+  }
+  switchSettingsTab(tab);
+  refreshMediaDevices();
+  Modal.open('settings-modal');
+}
+
+function switchSettingsTab(name) {
+  elements.settingsTabs?.forEach(tab => {
+    const active = tab.dataset.tab === name;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.settings-panel').forEach(panel => {
+    const active = panel.dataset.panel === name;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
+  });
+}
+
+function resetProfileDraft() {
+  // Convidados entram com o nome padrão do servidor ("Jogador"); usa esse nome
+  // para que salvar apenas as configurações de dispositivo não exija redigitar.
+  const me = state.participants.get(state.sessionId);
+  profileDraft.name = state.displayName || me?.display_name || '';
+  profileDraft.avatar = parseAvatar(state.avatar) || { ...DEFAULT_AVATAR };
+  if (elements.profileName) elements.profileName.value = profileDraft.name;
+  renderProfileDraft();
+}
+
+function renderProfileDraft() {
+  const name = (elements.profileName?.value ?? profileDraft.name).trim();
+  if (elements.profileNameCount) elements.profileNameCount.textContent = String((elements.profileName?.value || '').length);
+
+  if (elements.profileAvatarPreview) setAvatar(elements.profileAvatarPreview, profileDraft.avatar, name || '?');
+
+
+  if (elements.profilePhotoRemove) elements.profilePhotoRemove.hidden = profileDraft.avatar?.type !== 'custom';
+}
+
+function onProfileNameInput() {
+  renderProfileDraft();
+}
+
+function onProfilePhotoSelected(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    Toast.error('Selecione uma imagem válida');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    Toast.error('A imagem deve ter no máximo 5 MB');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const reduced = await Utils.shrinkImageDataUrl(ev.target.result);
+    profileDraft.avatar = { type: 'custom', data: reduced };
+    renderProfileDraft();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeProfilePhoto() {
+  profileDraft.avatar = { ...DEFAULT_AVATAR };
+  renderProfileDraft();
+}
+
+// Aplica o perfil editado: salva no navegador, atualiza a tela e avisa a sala
+function applyProfileChanges() {
+  const name = (elements.profileName?.value || '').trim();
+  if (!name) {
+    switchSettingsTab('profile');
+    Toast.error('Digite seu nome');
+    elements.profileName?.focus();
+    return false;
+  }
+
+  const avatar = serializeAvatar(profileDraft.avatar);
+  if (name === state.displayName && avatar === state.avatar) return true;
+
+  state.displayName = name;
+  state.avatar = avatar;
+
+  const saved = Storage.get('profile', {});
+  Storage.set('profile', {
+    ...saved,
+    displayName: name,
+    avatar: profileDraft.avatar
+  });
+
+  const me = state.participants.get(state.sessionId);
+  if (me) {
+    me.display_name = name;
+    me.avatar_data = avatar;
+  }
+  renderAll();
+  sendWebSocketMessage('profile-update', { display_name: name, avatar_data: avatar });
+  return true;
+}
+
+// Outro participante mudou nome/foto
+function handleProfileUpdated(payload) {
+  const participant = state.participants.get(payload.session_id);
+  if (!participant) return;
+  if (typeof payload.display_name === 'string' && payload.display_name) participant.display_name = payload.display_name;
+  participant.avatar_data = payload.avatar_data ?? null;
+  renderAll();
+}
+
+async function saveSettings() {
+  if (!applyProfileChanges()) return;
+
+  const previousDevices = Storage.get('devices', {});
+  state.settings = {
+    videoQuality: elements.videoQuality?.value || 'auto',
+    maxBitrate: parseInt(elements.maxBitrate?.value) || 2500,
+    frameRate: parseInt(elements.frameRate?.value) || 30,
+    noiseSuppression: elements.noiseSuppression?.checked ?? true,
+    echoCancellation: elements.echoCancellation?.checked ?? true
+  };
+
+  const nextDevices = {
+    ...previousDevices,
+    cameraId: elements.cameraSelect?.value || null,
+    micId: elements.micSelect?.value || null,
+    speakerId: elements.speakerSelect?.value || null
+  };
+  Storage.set('roomSettings', state.settings);
+  Storage.set('devices', nextDevices);
+  Modal.close('settings-modal');
+
+  applyVideoConstraints();
+  const applied = await applySelectedDevices(previousDevices, nextDevices);
+  if (!applied.mic || !applied.camera) {
+    // O aparelho escolhido não abriu: volta a preferência e os selects para o
+    // dispositivo que continua ativo, sem deixar a interface mentindo.
+    const corrected = { ...nextDevices };
+    if (!applied.mic) corrected.micId = previousDevices.micId || null;
+    if (!applied.camera) corrected.cameraId = previousDevices.cameraId || null;
+    Storage.set('devices', corrected);
+    if (elements.micSelect) elements.micSelect.value = corrected.micId || '';
+    if (elements.cameraSelect) elements.cameraSelect.value = corrected.cameraId || '';
+    await refreshMediaDevices();
+    Toast.error('Não foi possível usar o dispositivo escolhido. Mantivemos o anterior.');
+    return;
+  }
+  Toast.success('Configurações salvas');
+}
+
+// ============================================
+// WebSocket Connection
+// ============================================
+function buildWebSocketCandidates() {
+  const configured = window.APP_CONFIG?.wsUrl || '';
+  const isHttpsPage = location.protocol === 'https:';
+  const hostname = location.hostname;
+
+  const list = [];
+  const add = (url) => {
+    if (!url) return;
+    // Página HTTPS não pode abrir ws:// (mixed content bloqueado pelo navegador).
+    if (isHttpsPage && url.startsWith('ws:')) return;
+    if (!list.includes(url)) list.push(url);
+  };
+
+  // 1) O que o servidor calculou (mesma origem /ws em HTTPS, porta 8182 em HTTP)
+  add(configured);
+
+  if (isHttpsPage) {
+    add(`wss://${location.host}/ws`);
+  } else {
+    add(`ws://${hostname}:8182`);
+    // 3) Proxy HTTPS do Caddy - útil quando a porta 8182 está bloqueada
+    add(`wss://${hostname}:8443/ws`);
+  }
+
+  return list;
+}
+
+function initializeWebSocket() {
+  if (!state.wsCandidates.length) {
+    state.wsCandidates = buildWebSocketCandidates();
+    const saved = (() => { try { return sessionStorage.getItem('grape_ws_url'); } catch (e) { return null; } })();
+    if (saved && state.wsCandidates.includes(saved)) {
+      state.wsCandidates = [saved, ...state.wsCandidates.filter(u => u !== saved)];
+    }
+    state.wsCandidateIndex = 0;
+  }
+
+  const wsUrl = state.wsCandidates[state.wsCandidateIndex];
+  updateConnectionStatus(state.wsReconnectAttempts ? 'disconnected' : 'connecting');
+  Logger.log(`WebSocket connecting to ${wsUrl}`);
+
+  try {
+    state.ws = new WebSocket(wsUrl);
+    state.ws.binaryType = 'arraybuffer';
+
+    state.ws.onopen = () => {
+      Logger.log('WebSocket connected');
+      state.wsConnected = true;
+      state.wsReconnectAttempts = 0;
+      try { sessionStorage.setItem('grape_ws_url', wsUrl); } catch (e) { /* modo privado */ }
+      updateConnectionStatus('connected');
+      joinRoomViaWebSocket();
+    };
+
+    state.ws.onmessage = (event) => {
+      handleWebSocketMessage(JSON.parse(event.data));
+    };
+
+    state.ws.onclose = (event) => {
+      Logger.log(`WebSocket disconnected (${wsUrl}) code=${event.code}`);
+      state.wsConnected = false;
+      updateConnectionStatus('disconnected');
+      if (state.kicked) return; // expulso: não reconecta, a página já vai redirecionar
+      scheduleReconnect();
+    };
+
+    state.ws.onerror = (error) => {
+      Logger.error('WebSocket error:', wsUrl, error);
+    };
+  } catch (e) {
+    Logger.error('Failed to create WebSocket:', e);
+    scheduleReconnect();
+  }
+}
+
+function scheduleReconnect() {
+  // Alterna entre os endereços a cada falha e recomeça do primeiro no fim,
+  // em vez de desistir e ficar parado em "Reconectando...".
+  if (state.wsCandidates.length > 1) {
+    state.wsCandidateIndex = (state.wsCandidateIndex + 1) % state.wsCandidates.length;
+  }
+
+  state.wsReconnectAttempts++;
+  const delay = Math.min(300 * Math.pow(1.5, state.wsReconnectAttempts), 5000);
+  Logger.log(`Reconnecting in ${delay}ms (attempt ${state.wsReconnectAttempts})`);
+
+  if (state.wsReconnectAttempts === state.maxReconnectAttempts + 1) {
+    Toast.error('Sem conexão com o servidor. Verifique sua internet.', 8000);
+  }
+
+  setTimeout(() => {
+    if (!state.wsConnected) {
+      initializeWebSocket();
+    }
+  }, delay);
+}
+
+function joinRoomViaWebSocket() {
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+
+  state.ws.send(JSON.stringify({
+    type: 'join',
+    payload: {
+      room_code: state.inviteCode,
+      session_id: state.sessionId,
+      display_name: state.displayName,
+      avatar_data: avatarForJoin(),
+      // Chaves planas: são as mesmas que 'media-state' atualiza depois
+      metadata: mediaMetadata()
+    }
+  }));
+
+  // Preferência "entrar mutado": avisa o servidor já na entrada, antes do
+  // getUserMedia, para a lista de participantes não mostrar o microfone
+  // aberto enquanto a mídia local é preparada.
+  if (!state.joinedAt && prefereEntrarMudo()) {
+    state.muteState = 'SELF_MUTED';
+    state.muteBy = state.sessionId;
+    state.media.microphoneMuted = true;
+    sendWebSocketMessage('self-mute', { muted: true });
+  }
+}
+
+function mediaMetadata() {
+  return {
+    microphoneMuted: state.media.microphoneMuted,
+    cameraMuted: state.media.cameraMuted,
+    screenShare: state.media.screenShare,
+    deafened: state.deafened
+  };
+}
+
+function handleWebSocketMessage(message) {
+  Logger.debug('WS Message:', message.type, message.payload);
+
+  switch (message.type) {
+    case 'joined':
+      handleJoined(message.payload).catch(e => Logger.error('handleJoined error:', e));
+      break;
+    case 'participant-joined':
+      handleParticipantJoined(message.payload);
+      break;
+    case 'participant-left':
+      handleParticipantLeft(message.payload);
+      break;
+    case 'participants-list':
+      handleParticipantsList(message.payload);
+      break;
+    case 'offer':
+      handleOffer(message.payload);
+      break;
+    case 'answer':
+      handleAnswer(message.payload);
+      break;
+    case 'ice-candidate':
+      handleIceCandidate(message.payload);
+      break;
+    case 'media-state-changed':
+      handleMediaStateChanged(message.payload);
+      break;
+    case 'error':
+      handleWebSocketError(message.payload);
+      break;
+    case 'chat-message':
+      handleChatMessage(message.payload);
+      break;
+    case 'profile-updated':
+      handleProfileUpdated(message.payload);
+      break;
+    case 'ping':
+      // O servidor derruba a conexão se não responder ao ping
+      sendWebSocketMessage('pong', {});
+      break;
+    case 'admin-muted':
+      handleAdminMuted(message.payload);
+      break;
+    case 'mute-state':
+      applyMuteState(message.payload);
+      break;
+    case 'admin-camera-off':
+      handleAdminCameraOff(message.payload);
+      break;
+    case 'admin-mute-all':
+      if (message.payload?.by !== state.sessionId) Toast.info('O anfitrião silenciou todos');
+      break;
+    case 'kicked':
+      handleKicked(message.payload);
+      break;
+    case 'room-lock':
+      state.isLocked = message.payload?.locked === true;
+      renderAdminControls();
+      Toast.info(state.isLocked ? 'Sala trancada' : 'Sala destrancada');
+      break;
+  }
+}
+
+async function handleJoined(payload) {
+  Logger.log('Joined room:', payload.room.name);
+
+  // A foto antiga foi reduzida antes de a conexão abrir: envia agora
+  if (state.pendingAvatarUpdate) {
+    state.pendingAvatarUpdate = false;
+    sendWebSocketMessage('profile-update', {
+      display_name: state.displayName,
+      avatar_data: state.avatar
+    });
+  }
+
+  state.roomName = payload.room.name;
+  state.maxParticipants = payload.room.max_participants;
+  state.hostSessionId = payload.creator_session_id || '';
+  state.isHost = payload.is_host === true;
+  // Quem entra também ouve o próprio aviso de entrada
+  playNotificationSound('join.mp3');
+  state.isLocked = payload.is_locked === true;
+  // Reentrada/reconexão: só a primeira entrada aplica a preferência "entrar mutado"
+  const primeiraEntrada = !state.joinedAt;
+  // Mute restaurado do servidor (sobrevive a reconexão)
+  state.muteState = payload.mute_state === 'SELF_MUTED' ? 'SELF_MUTED'
+    : payload.mute_state === 'HOST_MUTED' ? 'HOST_MUTED' : 'UNMUTED';
+  state.muteBy = payload.mute_by ?? null;
+  state.muteSeq = Number(payload.mute_seq ?? 0);
+  document.body.classList.toggle('is-host', state.isHost);
+  renderAdminControls();
+  elements.roomName.textContent = state.roomName;
+  if (!state.joinedAt) state.joinedAt = Date.now();
+  startTimer();
+
+  // Eu primeiro, depois os demais
+  const next = new Map();
+  next.set(payload.participant.session_id, payload.participant);
+  payload.participants.forEach(p => {
+    if (p.session_id !== state.sessionId) next.set(p.session_id, p);
+  });
+  state.participants = next;
+  state.order = Array.from(next.keys());
+
+  await initializeWebRTC(payload.webrtc_config);
+
+  // Quem entra liga para todos que já estavam na sala
+  state.order.forEach(sessionId => {
+    if (sessionId !== state.sessionId) createPeerConnection(sessionId, true);
+  });
+
+  // Mostra alguém (um participante, se houver; senão eu mesmo)
+  const current = state.view.sessionId;
+  if (!current || !state.participants.has(current)) {
+    state.view.manual = false;
+    selectParticipant(firstRemoteOrSelf(), { manual: false });
+  } else {
+    renderAll();
+  }
+
+  // Aplica o mute restaurado ao próprio microfone. Na primeira entrada a
+  // preferência "entrar mutado" também vale, e o servidor precisa saber
+  // disso: senão a lista de participantes mostra o microfone aberto.
+  const servidorMudo = state.muteState !== 'UNMUTED';
+  if (servidorMudo || (primeiraEntrada && prefereEntrarMudo())) {
+    state.media.microphoneMuted = true;
+    setMicMuted(true);
+    if (!servidorMudo) requestSelfMute();
+  } else {
+    state.media.microphoneMuted = false;
+    setMicMuted(false);
+  }
+  updateMediaButtons();
+  renderParticipants();
+
+  Toast.success(`Você entrou em "${escapeHtml(state.roomName)}"`);
+}
+
+function handleParticipantJoined(payload) {
+  state.participants.set(payload.session_id, payload);
+  if (!state.order.includes(payload.session_id)) state.order.push(payload.session_id);
+
+  // Quem já estava na sala NÃO cria uma conexão de saída pro novo participante.
+  // Apenas o participante que entrou (iniciador) cria os peer connections.
+  // Essa sala espera a oferta do novo participante via handleOffer, que cria
+  // o lado respondente sob demanda. Assim existe exatamente UM peer connection
+  // por par de participantes (sem duplicar mídia/áudio).
+
+  // Se eu estava sozinho olhando para mim, passa a mostrar quem chegou
+  if (!state.view.manual && state.view.sessionId === state.sessionId) {
+    selectParticipant(payload.session_id, { manual: false });
+  } else {
+    renderAll();
+  }
+
+  notifyRoom(`${escapeHtml(payload.display_name)} entrou`);
+  playNotificationSound('join.mp3');
+}
+
+function handleParticipantLeft(payload) {
+  const { session_id: sessionId } = payload;
+  const participant = state.participants.get(sessionId);
+
+  playNotificationSound('exit-call.mp3');
+
+  state.participants.delete(sessionId);
+  state.order = state.order.filter(id => id !== sessionId);
+  state.view.tabPref.delete(sessionId);
+  closePeer(sessionId);
+
+  if (state.view.sessionId === sessionId) {
+    state.view.manual = false;
+    selectParticipant(firstRemoteOrSelf(), { manual: false });
+  } else {
+    renderAll();
+  }
+
+  if (participant) notifyRoom(`${escapeHtml(participant.display_name)} saiu`);
+}
+
+function handleParticipantsList(payload) {
+  payload.participants.forEach(p => {
+    if (p.session_id === state.sessionId) return;
+    state.participants.set(p.session_id, p);
+    if (!state.order.includes(p.session_id)) state.order.push(p.session_id);
+  });
+  renderAll();
+}
+
+function handleMediaStateChanged(payload) {
+  const { session_id: sessionId, state: mediaState } = payload;
+  const participant = state.participants.get(sessionId);
+  if (!participant) return;
+
+  const before = flagsOf(sessionId);
+  participant.metadata = { ...participant.metadata, ...mediaState };
+  // O mute vem do servidor: mantém o estado de origem em sincronia
+  if (mediaState?.mute_state) {
+    participant.mute_state = mediaState.mute_state;
+    participant.mute_by = mediaState.mute_by ?? null;
+  }
+  autoAdjustTab(sessionId, before, flagsOf(sessionId));
+
+  // Notificação toast quando alguém inicia/para de compartilhar tela
+  const after = flagsOf(sessionId);
+  if (sessionId !== state.sessionId) {
+    if (!before.screen && after.screen) {
+      notifyRoom(`${escapeHtml(participant.display_name)} está compartilhando a tela`, 8000, { avatar: participant.avatar_data });
+      playNotificationSound('screen.mp3');
+    } else if (before.screen && !after.screen) {
+      notifyRoom(`${escapeHtml(participant.display_name)} parou de compartilhar a tela`, 8000, { avatar: participant.avatar_data });
+      // Só quem está olhando a aba dessa pessoa precisa do aviso sonoro
+      if (state.view.sessionId === sessionId) playNotificationSound('live-close.mp3');
+    }
+  }
+
+  renderParticipants();
+  // O Várias telas depende do estado de tela de qualquer participante:
+  // re-renderiza o palco também quando outra pessoa começa/para de compartilhar.
+  renderStage();
+}
+
+function handleWebSocketError(payload) {
+  // O código fica no console (depuração); na tela, só a mensagem em português.
+  Logger.warn('WebSocket error:', payload?.code);
+  Toast.error(payload?.message || 'Algo deu errado. Tente de novo.');
+}
+
+function sendWebSocketMessage(type, payload) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type, payload }));
+  }
+}
+
+function broadcastMediaState() {
+  sendWebSocketMessage('media-state', mediaMetadata());
+}
+
+function updateConnectionStatus(status) {
+  state.connection = status;
+  elements.statusDot?.classList.remove('connected', 'connecting', 'offline');
+  elements.statusDot?.classList.add(status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'offline');
+  refreshStatusText();
+}
+
+// ============================================
+// Cronômetro / status da chamada
+// ============================================
+function startTimer() {
+  if (timerHandle) return;
+  timerHandle = setInterval(refreshStatusText, 1000);
+  refreshStatusText();
+}
+
+function formatClock(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+}
+
+function refreshStatusText() {
+  if (!elements.statusText) return;
+  if (state.connection === 'disconnected') {
+    elements.statusText.textContent = state.wsReconnectAttempts
+      ? `Reconectando... (${state.wsReconnectAttempts})`
+      : 'Reconectando...';
+  } else if (state.connection === 'connected' && state.joinedAt) {
+    elements.statusText.textContent = formatClock(Math.floor((Date.now() - state.joinedAt) / 1000));
+  } else {
+    elements.statusText.textContent = 'Conectando...';
+  }
+}
+
+// ============================================
+// WebRTC
+// ============================================
+function initializeWebRTC(config) {
+  webrtcConfig = config;
+  initAudioMonitor();
+  startAudioActivityLoop();
+  Logger.log('WebRTC config:', config);
+}
+
+function createPeerConnection(remoteSessionId, isInitiator) {
+  const existing = state.peers.get(remoteSessionId);
+  if (existing) return existing;
+
+  const pc = new RTCPeerConnection(webrtcConfig || window.APP_CONFIG?.webrtc);
+  const peer = {
+    id: remoteSessionId,
+    pc,
+    roles: {}, // papel -> RTCRtpTransceiver
+    cameraStream: null, // MediaStream remoto só com a câmera
+    screenStream: null, // MediaStream remoto com a tela (+ áudio da tela)
+    audioEl: null,
+    localMuted: false, // silenciado só para mim
+    pendingIce: []
+  };
+  state.peers.set(remoteSessionId, peer);
+
+  pc.ontrack = (event) => handleRemoteTrack(peer, event);
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendWebSocketMessage('ice-candidate', {
+        target_session_id: remoteSessionId,
+        data: event.candidate.toJSON()
+      });
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    Logger.log(`PC state with ${remoteSessionId}:`, pc.connectionState);
+    renderParticipants();
+    if (state.view.sessionId === remoteSessionId || isMultiActive()) renderStage();
+  };
+
+  if (isInitiator) {
+    // Quem liga define os 4 canais, sempre na mesma ordem (ROLES)
+    ROLES.forEach(role => {
+      peer.roles[role] = pc.addTransceiver(ROLE_KINDS[role], { direction: 'sendrecv' });
+    });
+    syncPeerSenders(peer);
+    createOffer(peer);
+  }
+
+  return peer;
+}
+
+function closePeer(sessionId) {
+  const peer = state.peers.get(sessionId);
+  if (!peer) return;
+  peer.pc.close();
+  stopAudioMonitor(sessionId);
+  if (peer.audioEl) {
+    peer.audioEl.srcObject = null;
+    peer.audioEl.remove();
+    blockedMedia.delete(peer.audioEl);
+  }
+  state.peers.delete(sessionId);
+}
+
+// Trilhas que eu estou enviando agora, por papel
+function getLocalTracks() {
+  return {
+    audio: state.localStream?.getAudioTracks()[0] || null,
+    camera: state.localStream?.getVideoTracks()[0] || null,
+    screen: state.screenStream?.getVideoTracks()[0] || null,
+    screenAudio: state.screenStream?.getAudioTracks()[0] || null
+  };
+}
+
+function syncPeerSenders(peer) {
+  const tracks = getLocalTracks();
+  ROLES.forEach(role => {
+    const sender = peer.roles[role]?.sender;
+    if (!sender) return;
+    const track = tracks[role];
+    if ((sender.track || null) === track) return;
+    sender.replaceTrack(track).catch(e => Logger.warn(`replaceTrack(${role}) failed:`, e));
+  });
+}
+
+function syncAllPeers() {
+  state.peers.forEach(syncPeerSenders);
+}
+
+async function createOffer(peer) {
+  try {
+    const offer = await peer.pc.createOffer();
+    await peer.pc.setLocalDescription(offer);
+    sendWebSocketMessage('offer', {
+      target_session_id: peer.id,
+      data: peer.pc.localDescription
+    });
+  } catch (e) {
+    Logger.error('Create offer failed:', e);
+  }
+}
+
+function handleOffer(payload) {
+  const peer = createPeerConnection(payload.from_session_id, false);
+  receiveOffer(peer, payload.data);
+}
+
+async function receiveOffer(peer, offer) {
+  const pc = peer.pc;
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+    // Os canais chegam na ordem em que quem ligou os criou
+    const transceivers = pc.getTransceivers();
+    ROLES.forEach((role, i) => {
+      const t = transceivers[i];
+      if (!t) return;
+      peer.roles[role] = t;
+      t.direction = 'sendrecv';
+    });
+    syncPeerSenders(peer);
+    await flushPendingIce(peer);
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sendWebSocketMessage('answer', {
+      target_session_id: peer.id,
+      data: pc.localDescription
+    });
+  } catch (e) {
+    Logger.error('Receive offer failed:', e);
+  }
+}
+
+async function handleAnswer(payload) {
+  const peer = state.peers.get(payload.from_session_id);
+  if (!peer) return;
+  try {
+    await peer.pc.setRemoteDescription(new RTCSessionDescription(payload.data));
+    await flushPendingIce(peer);
+  } catch (e) {
+    Logger.error('Receive answer failed:', e);
+  }
+}
+
+async function handleIceCandidate(payload) {
+  const peer = state.peers.get(payload.from_session_id);
+  if (!peer) return;
+  // Candidatos podem chegar antes da oferta/resposta; guarda até poder usar
+  if (!peer.pc.remoteDescription) {
+    peer.pendingIce.push(payload.data);
+    return;
+  }
+  try {
+    await peer.pc.addIceCandidate(new RTCIceCandidate(payload.data));
+  } catch (e) {
+    Logger.error('Add ICE candidate failed:', e);
+  }
+}
+
+async function flushPendingIce(peer) {
+  const queue = peer.pendingIce.splice(0);
+  for (const candidate of queue) {
+    try {
+      await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      Logger.error('Add queued ICE candidate failed:', e);
+    }
+  }
+}
+
+function handleRemoteTrack(peer, event) {
+  const role = ROLES[peer.pc.getTransceivers().indexOf(event.transceiver)];
+  if (!role) return;
+  Logger.log(`Remote ${role} track from ${peer.id}`);
+
+  const track = event.track;
+  switch (role) {
+    case 'audio': {
+      const audio = ensureAudioEl(peer);
+      audio.srcObject = new MediaStream([track]);
+      playMedia(audio);
+      // Monitora o áudio remoto para o indicador de ativo falante.
+      startAudioMonitor(peer.id, audio.srcObject);
+      break;
+    }
+    case 'camera':
+      peer.cameraStream = new MediaStream([track]);
+      break;
+    case 'screen':
+    case 'screenAudio':
+      if (!peer.screenStream) peer.screenStream = new MediaStream();
+      peer.screenStream.addTrack(track);
+      break;
+  }
+
+  if (state.view.sessionId === peer.id || isMultiActive()) renderStage();
+}
+
+// Áudio de cada participante toca sempre, independente de qual aba está aberta
+function ensureAudioEl(peer) {
+  if (!peer.audioEl) {
+    const audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.muted = peer.localMuted || state.deafened;
+    elements.audioSink.appendChild(audio);
+    peer.audioEl = audio;
+    // Cada nova faixa de áudio remota já sai no alto-falante preferido.
+    applySpeakerToElement(audio);
+  }
+  return peer.audioEl;
+}
+
+// ============================================
+// Detecção de áudio ativo (ativo falante)
+// ============================================
+// Usa Web Audio API (AnalyserNode) para medir o nível de áudio de cada
+// participante remotamente e exibir uma borda verde enquanto fala.
+// A detecção é independente por participante e consome pouca CPU.
+const AUDIO_ACTIVITY_THRESHOLD = 0.02; // amplitude RMS mínima (0 a 1)
+const AUDIO_ACTIVITY_INTERVAL = 250; // ms
+const AUDIO_SILENCE_FRAMES = 3; // medições consecutivas abaixo do threshold
+let audioActivityTimer = null;
+let audioContextResumed = false;
+const audioSilenceCount = new Map(); // sessionId -> medições silenciosas consecutivas
+const audioActivityBuffers = new Map(); // sessionId -> buffer reutilizado
+
+/** Resume o AudioContext na primeira interação do usuário (exigido por navegadores). */
+function ensureAudioContextRunning() {
+  if (!state.audioCtx) return;
+  if (audioContextResumed) return;
+  if (state.audioCtx.state === 'running') {
+    audioContextResumed = true;
+    return;
+  }
+  state.audioCtx.resume().then(() => {
+    audioContextResumed = true;
+    Logger.log('AudioContext ativo falante: resumed');
+  }).catch(() => {
+    // Não marca como resumido: tentará novamente no próximo frame/interação.
+    audioContextResumed = false;
+  });
+}
+
+function initAudioMonitor() {
+  if (state.audioCtx) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    state.audioCtx = new Ctx();
+  } catch (e) {
+    Logger.warn('ÁudioContext não disponível para ativo falante:', e);
+  }
+}
+
+function startAudioMonitor(sessionId, stream) {
+  if (!state.audioCtx || !stream) return;
+  stopAudioMonitor(sessionId);
+  try {
+    const source = state.audioCtx.createMediaStreamSource(stream);
+    const analyser = state.audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    state.audioMonitors.set(sessionId, { analyser, source });
+  } catch (e) {
+    Logger.warn('Falha ao iniciar monitor de áudio para', sessionId, e);
+  }
+}
+
+function stopAudioMonitor(sessionId) {
+  const mon = state.audioMonitors.get(sessionId);
+  if (mon) {
+    try {
+      mon.source.disconnect();
+    } catch (e) { /* ignore */ }
+    state.audioMonitors.delete(sessionId);
+  }
+  state.audioActive.delete(sessionId);
+  audioSilenceCount.delete(sessionId);
+  audioActivityBuffers.delete(sessionId);
+}
+
+function startLocalAudioMonitor() {
+  if (!state.audioCtx) return;
+  const audioTracks = state.localStream?.getAudioTracks() || [];
+  if (audioTracks.length === 0) return;
+  const localAudioStream = new MediaStream(audioTracks);
+  startAudioMonitor(state.sessionId, localAudioStream);
+}
+
+function stopLocalAudioMonitor() {
+  stopAudioMonitor(state.sessionId);
+}
+
+function startAudioActivityLoop() {
+  if (audioActivityTimer) return;
+  // 4 leituras por segundo bastam para o indicador e evitam o custo de
+  // rodar a cada quadro (60 fps) mesmo quando ninguém está falando.
+  audioActivityTimer = setInterval(updateAudioActivity, AUDIO_ACTIVITY_INTERVAL);
+  updateAudioActivity();
+}
+
+function stopAudioActivityLoop() {
+  if (audioActivityTimer) {
+    clearInterval(audioActivityTimer);
+    audioActivityTimer = null;
+  }
+}
+
+function updateAudioActivity() {
+  ensureAudioContextRunning();
+
+  if (!state.audioCtx || document.hidden) return;
+
+  if (state.audioMonitors.size === 0) {
+    if (state.audioActive.size) {
+      state.audioActive.clear();
+      renderParticipants();
+      if (state.view.sessionId) renderStage();
+    }
+    return;
+  }
+
+  const nowActive = new Set();
+  for (const [sessionId, { analyser }] of state.audioMonitors) {
+    let uint8 = audioActivityBuffers.get(sessionId);
+    if (!uint8 || uint8.length !== analyser.fftSize) {
+      uint8 = new Uint8Array(analyser.fftSize);
+      audioActivityBuffers.set(sessionId, uint8);
+    }
+    analyser.getByteTimeDomainData(uint8);
+    let sum = 0;
+    for (let i = 0; i < uint8.length; i++) {
+      const v = (uint8[i] - 128) / 128; // -1 .. 1
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / uint8.length);
+    const wasActive = state.audioActive.has(sessionId);
+    const silenceCount = audioSilenceCount.get(sessionId) || 0;
+
+    if (rms > AUDIO_ACTIVITY_THRESHOLD) {
+      nowActive.add(sessionId);
+      audioSilenceCount.delete(sessionId);
+    } else if (wasActive && silenceCount >= AUDIO_SILENCE_FRAMES) {
+      // Já ficou silencioso o suficiente: remove do ativo falante
+      audioSilenceCount.delete(sessionId);
+    } else if (wasActive) {
+      // Ainda no período de histerese: mantém como ativo por enquanto
+      nowActive.add(sessionId);
+      audioSilenceCount.set(sessionId, silenceCount + 1);
+    } else {
+      // Nunca esteve ativo: garante que não entre por ruído
+      audioSilenceCount.set(sessionId, silenceCount + 1);
+    }
+  }
+
+  const changed =
+    nowActive.size !== state.audioActive.size ||
+    [...nowActive].some((id) => !state.audioActive.has(id));
+  if (changed) {
+    state.audioActive = nowActive;
+    renderParticipants();
+    if (state.view.sessionId || state.view.grid || isMultiActive()) renderStage();
+  }
+}
+
+// ============================================
+// Media Handling
+// ============================================
+async function initializeLocalMedia() {
+  const devicePrefs = Storage.get('devices', {});
+  const prefs = Storage.get('profile', {});
+
+  if (!hasMediaDevices) {
+    Toast.error(mediaUnavailableMessage('Câmera e microfone'));
+    state.localStream = new MediaStream();
+    state.media.microphoneMuted = true;
+    state.media.cameraMuted = true;
+    updateMediaButtons();
+    syncAllPeers();
+    broadcastMediaState();
+    renderAll();
+    return;
+  }
+
+  const micValido = await micIdValido();
+
+  try {
+    const constraints = await Devices.getConstraints(true, true, {
+      width: 1280,
+      height: 720,
+      frameRate: 30,
+      deviceId: devicePrefs.cameraId || undefined,
+      audioDeviceId: micValido || undefined,
+      noiseSuppression: state.settings.noiseSuppression,
+      echoCancellation: state.settings.echoCancellation
+    });
+
+    // Só abre a câmera se ela deve começar ligada; senão a luz nem acende
+    if (prefs.preferences?.autoVideo !== true) delete constraints.video;
+
+    try {
+      state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      if (!constraints.video) throw err;
+      // Câmera indisponível/negada: entra só com áudio
+      Logger.warn('Camera unavailable, joining audio-only:', err);
+      delete constraints.video;
+      state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      Toast.warning('Câmera indisponível. Entrando sem vídeo.');
+    }
+
+    // Preferência "entrar mutado" e mute restaurado/definido pelo servidor
+    if (prefereEntrarMudo() || state.muteState !== 'UNMUTED') {
+      state.localStream.getAudioTracks().forEach(t => t.enabled = false);
+      state.media.microphoneMuted = true;
+    }
+
+    Logger.log('Mídia local inicializada');
+  } catch (e) {
+    Logger.error('Failed to initialize local media:', e);
+    Toast.error('Não foi possível acessar câmera e microfone');
+    state.localStream = new MediaStream();
+    state.media.microphoneMuted = true;
+  }
+
+  state.media.cameraMuted = state.localStream.getVideoTracks().length === 0;
+  // Microfone local fechado, mas o servidor ainda pode achar que está aberto:
+  // pede a transição antes de reportar o estado de mídia.
+  requestSelfMute();
+  updateMediaButtons();
+  syncAllPeers();
+  broadcastMediaState();
+
+  // Inicia o monitor de áudio local (próprio microfone) para o ativo falante
+  startLocalAudioMonitor();
+  // Aplica a saída preferida também ao áudio que já estava tocando.
+  applySpeakerPreference(Storage.get('devices', {}).speakerId || '');
+
+  renderAll();
+}
+
+let roomDeviceListenerBound = false;
+
+function handleDeviceChange() {
+  refreshMediaDevices();
+}
+
+async function setupMediaDevices() {
+  if (!roomDeviceListenerBound && navigator.mediaDevices?.addEventListener) {
+    roomDeviceListenerBound = true;
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+  }
+  await refreshMediaDevices();
+}
+
+function updateMediaButtons() {
+  elements.toggleMicBtn?.setAttribute('aria-pressed', String(state.media.microphoneMuted));
+  // O rótulo descreve o que o clique faz; a origem do mute (host ou
+  // participante) aparece na lista e no destaque do próprio botão.
+  const semMic = !state.localStream?.getAudioTracks().length;
+  const rotuloMic = semMic
+    ? 'Microfone (M)'
+    : state.media.microphoneMuted
+      ? 'Ativar microfone (M)'
+      : 'Mutar microfone (M)';
+  elements.toggleMicBtn?.setAttribute('title', rotuloMic);
+  elements.toggleMicBtn?.setAttribute('aria-label', rotuloMic);
+  elements.toggleMicBtn?.classList.toggle('host-muted', state.muteState === 'HOST_MUTED');
+  elements.toggleCameraBtn?.setAttribute('aria-pressed', String(state.media.cameraMuted));
+  const rotuloCamera = state.media.cameraMuted ? 'Ligar câmera (V)' : 'Desligar câmera (V)';
+  elements.toggleCameraBtn?.setAttribute('title', rotuloCamera);
+  elements.toggleCameraBtn?.setAttribute('aria-label', rotuloCamera);
+  elements.toggleScreenBtn?.setAttribute('aria-pressed', String(state.media.screenShare));
+  const rotuloTela = state.media.screenShare ? 'Parar compartilhamento' : 'Compartilhar tela';
+  elements.toggleScreenBtn?.setAttribute('title', rotuloTela);
+  elements.toggleScreenBtn?.setAttribute('aria-label', rotuloTela);
+  elements.toggleDeafenBtn?.setAttribute('aria-pressed', String(state.deafened));
+  elements.layoutBtn?.setAttribute('aria-pressed', String(state.view.split));
+  elements.popoutBtn?.setAttribute('aria-pressed', String(!!popout.mode));
+  elements.popoutBtn?.setAttribute('title', popout.mode ? 'Trazer de volta (P)' : 'Janela flutuante (P)');
+  syncPopoutControls();
+  syncMediaSession();
+}
+
+// Preferência do navegador: entrar na sala com o microfone fechado.
+function prefereEntrarMudo() {
+  const profile = Storage.get('profile', {});
+  return profile?.preferences?.autoMute === true;
+}
+
+// Pede ao servidor o mute que o microfone local já está aplicando.
+// O servidor é a fonte de verdade: sem isso a lista de participantes mostra
+// o microfone aberto enquanto o áudio já está silenciado.
+function requestSelfMute() {
+  if (state.muteState !== 'UNMUTED') return;
+  if (!state.media.microphoneMuted) return;
+  if (!state.localStream?.getAudioTracks().length) return;
+
+  state.muteState = 'SELF_MUTED';
+  state.muteBy = state.sessionId;
+  sendWebSocketMessage('self-mute', { muted: true });
+  updateMediaButtons();
+  renderParticipants();
+}
+
+// Liga/desliga o envio do microfone. Retorna false se não há microfone.
+function setMicMuted(muted) {
+  const tracks = state.localStream?.getAudioTracks() || [];
+  if (tracks.length === 0) return false;
+  tracks.forEach(track => track.enabled = !muted);
+  state.media.microphoneMuted = muted;
+  return true;
+}
+
+// Aplica o estado de mute vindo do servidor (fonte única de verdade).
+// Ignora eventos repetidos/atrasados pelo `seq` e atualiza a interface.
+function applyMuteState(payload) {
+  const seq = Number(payload?.seq ?? 0);
+  const target = payload?.session_id;
+  if (!target) return;
+
+  const meu = target === state.sessionId;
+
+  if (meu) {
+    // Evento mais antigo que o já aplicado: descarta.
+    if (seq && seq < state.muteSeq) return;
+    if (seq) state.muteSeq = seq;
+
+    const novo = payload.state === 'UNMUTED' ? 'UNMUTED'
+      : payload.state === 'HOST_MUTED' ? 'HOST_MUTED' : 'SELF_MUTED';
+    state.muteState = novo;
+    state.muteBy = payload.by ?? null;
+
+    const mudo = novo !== 'UNMUTED';
+    setMicMuted(mudo);
+    state.media.microphoneMuted = mudo;
+
+    if (payload.cause === 'host') {
+      Toast.info(mudo ? 'O anfitrião silenciou seu microfone' : 'O anfitrião ativou seu microfone');
+    }
+  } else {
+    const p = state.participants.get(target);
+    if (p) {
+      p.metadata = { ...(p.metadata || {}), mute_state: payload.state, mute_by: payload.by ?? null };
+      p.mute_state = payload.state;
+      p.mute_by = payload.by ?? null;
+    }
+  }
+
+  updateMediaButtons();
+  broadcastMediaState();
+  renderAll();
+}
+
+function toggleMicrophone() {
+  if (!state.localStream?.getAudioTracks().length) {
+    Toast.warning('Nenhum microfone encontrado');
+    return;
+  }
+
+  // Como no Discord: abrir o microfone enquanto ensurdecido também volta o áudio
+  if (state.deafened) {
+    state.deafened = false;
+    state.micMutedBeforeDeafen = null;
+    setMicMuted(false);
+    applyOutputMute();
+    updateMediaButtons();
+    broadcastMediaState();
+    renderParticipants();
+    playNotificationSound('unmute.wav');
+    // Encerrar o deafen libera o próprio mute no servidor.
+    sendWebSocketMessage('self-mute', { muted: false });
+    return;
+  }
+
+  // O servidor decide: aqui só pedimos a transição e esperamos o mute-state.
+  // Otimista: aplica na hora para o botão responder sem atraso.
+  const querMudo = !(state.muteState !== 'UNMUTED');
+  setMicMuted(querMudo);
+  state.media.microphoneMuted = querMudo;
+  state.muteState = querMudo ? 'SELF_MUTED' : 'UNMUTED';
+  state.muteBy = querMudo ? state.sessionId : null;
+  playNotificationSound(querMudo ? 'mute.wav' : 'unmute.wav');
+
+  updateMediaButtons();
+  broadcastMediaState();
+  renderParticipants();
+
+  sendWebSocketMessage('self-mute', { muted: querMudo });
+}
+
+// Silencia (ou devolve) tudo o que eu ouço: vozes e áudio da tela de quem transmite
+function toggleDeafen() {
+  if (!state.deafened) {
+    state.deafened = true;
+    state.micMutedBeforeDeafen = state.muteState;
+    setMicMuted(true);
+    Toast.info('Áudio silenciado');
+  } else {
+    state.deafened = false;
+    // Só reabre o microfone se ele não estava silenciado por conta própria
+    if (state.micMutedBeforeDeafen === 'UNMUTED') setMicMuted(false);
+    state.micMutedBeforeDeafen = null;
+    Toast.info('Áudio ativado');
+  }
+
+  applyOutputMute();
+  updateMediaButtons();
+  broadcastMediaState();
+  renderParticipants();
+
+  // O servidor precisa saber que o microfone efetivo mudou
+  sendWebSocketMessage('self-mute', { muted: state.deafened || state.muteState !== 'UNMUTED' });
+}
+
+function applyOutputMute() {
+  state.peers.forEach(peer => {
+    if (peer.audioEl) peer.audioEl.muted = peer.localMuted || state.deafened;
+  });
+  renderStage(); // o áudio da tela é o do próprio <video>
+}
+
+async function toggleCamera() {
+  if (!state.localStream) state.localStream = new MediaStream();
+
+  try {
+    if (state.localStream.getVideoTracks().length > 0) {
+      stopCamera();
+    } else {
+      await startCamera();
+    }
+  } catch (e) {
+    Logger.error('Toggle camera failed:', e);
+    Toast.error(mensagemErroCamera(e));
+    return;
+  }
+
+  updateMediaButtons();
+  syncAllPeers();
+  broadcastMediaState();
+  renderAll();
+}
+
+// Desligar de verdade: stop() libera o dispositivo e apaga a luz da câmera
+function stopCamera() {
+  state.localStream.getVideoTracks().forEach(track => {
+    track.stop();
+    state.localStream.removeTrack(track);
+  });
+  state.media.cameraMuted = true;
+}
+
+// Mensagem em português para as falhas comuns de câmera
+function mensagemErroCamera(e) {
+  switch (e?.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Acesso à câmera negado. Libere a câmera nas permissões do site';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'A câmera está em uso em outro programa';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'Nenhuma câmera encontrada';
+    case 'OverconstrainedError':
+      return 'A câmera não aceita essa resolução';
+    default:
+      return 'Não foi possível ligar a câmera';
+  }
+}
+
+// O deviceId salvo pode não existir mais (câmera trocada, outro perfil do
+// navegador, IDs regenerados). Se não estiver na lista atual, ignora.
+async function cameraIdValido() {
+  const salvo = Storage.get('devices', {}).cameraId;
+  if (!salvo) return null;
+  try {
+    const lista = await Devices.enumerate();
+    if (lista.cameras.some(c => c.deviceId === salvo)) return salvo;
+    // Salvo aponta para câmera que não existe mais: descarta para não insistir
+    Storage.set('devices', { ...Storage.get('devices', {}), cameraId: null });
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Mesmo cuidado com o microfone: deviceId que não existe mais derrubaria o áudio
+async function micIdValido() {
+  const salvo = Storage.get('devices', {}).micId;
+  if (!salvo) return null;
+  try {
+    const lista = await Devices.enumerate();
+    if (lista.microphones.some(m => m.deviceId === salvo)) return salvo;
+    Storage.set('devices', { ...Storage.get('devices', {}), micId: null });
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Tenta na ordem: preferências do usuário -> qualquer câmera -> resolução menor
+async function abrirCamera() {
+  const deviceId = await cameraIdValido();
+  const tentativas = [];
+
+  if (deviceId) {
+    tentativas.push({ width: 1280, height: 720, deviceId });
+    tentativas.push({ width: 640, height: 480, deviceId });
+  }
+  tentativas.push({ width: 1280, height: 720 });
+  tentativas.push({ width: 640, height: 480 });
+
+  let ultimoErro = null;
+  for (const opcao of tentativas) {
+    const constraints = await Devices.getConstraints(true, false, {
+      ...opcao,
+      frameRate: state.settings.frameRate || 30
+    });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Caindo para "qualquer câmera", esquece o deviceId quebrado
+      if (!opcao.deviceId && deviceId) {
+        const salvo = Storage.get('devices', {});
+        Storage.set('devices', { ...salvo, cameraId: null });
+        setupMediaDevices().catch(() => {});
+      }
+      return stream;
+    } catch (e) {
+      ultimoErro = e;
+      // Permissão negada não melhora tentando de novo
+      if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') break;
+    }
+  }
+  throw ultimoErro || new Error('Não foi possível ligar a câmera.');
+}
+
+async function startCamera() {
+  if (!hasMediaDevices) {
+    Toast.error(mediaUnavailableMessage('Câmera'));
+    return;
+  }
+
+  const stream = await abrirCamera();
+  state.localStream.addTrack(stream.getVideoTracks()[0]);
+  state.media.cameraMuted = false;
+
+  // Quem acabou de ligar a câmera quer se ver
+  if (state.view.sessionId === state.sessionId && !state.media.screenShare && !state.view.tabPref.has(state.sessionId)) {
+    state.view.tab = 'camera';
+  }
+}
+
+async function toggleScreenShare() {
+  if (state.media.screenShare) {
+    stopScreenShare();
+  } else {
+    await startScreenShare();
+  }
+}
+
+async function startScreenShare() {
+  if (!hasScreenShare) {
+    Toast.error(mediaUnavailableMessage('Compartilhamento de tela'));
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: state.settings.frameRate || 30 } },
+      audio: true,
+      preferCurrentTab: false,
+      selfBrowserSurface: 'exclude',
+      systemAudio: 'include',
+      surfaceSwitching: 'include',
+      monitorTypeSurfaces: 'include'
+    });
+  } catch (e) {
+    Logger.error('Screen share failed:', e);
+    if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') {
+      Toast.error('Não foi possível compartilhar a tela');
+    }
+    return;
+  }
+
+  // Se já estava compartilhando, encerra o compartilhamento anterior
+  // (track replacement: substitui a trilha de tela em vez de duplicar).
+  if (state.screenStream) {
+    stopScreenShare();
+  }
+
+  state.screenStream = stream;
+  state.media.screenShare = true;
+
+  // Quem compartilha também ouve o som de aviso
+  playNotificationSound('screen.mp3');
+
+  // O botão "Parar compartilhamento" do navegador também encerra
+  const screenVideoTrack = stream.getVideoTracks()[0];
+  if (screenVideoTrack) {
+    screenVideoTrack.addEventListener('ended', () => {
+      if (state.screenStream === stream) stopScreenShare();
+    });
+  }
+
+  if (state.view.sessionId === state.sessionId) {
+    state.view.tab = 'screen';
+    state.view.tabPref.delete(state.sessionId);
+  }
+
+  updateMediaButtons();
+  syncAllPeers();
+  broadcastMediaState();
+  renderAll();
+  Toast.success('Compartilhando tela');
+}
+
+function stopScreenShare() {
+  if (!state.screenStream) return;
+
+  state.screenStream.getTracks().forEach(track => track.stop());
+  state.screenStream = null;
+  state.media.screenShare = false;
+
+  if (state.view.sessionId === state.sessionId && state.view.tab === 'screen') {
+    state.view.tab = 'camera';
+  }
+
+  updateMediaButtons();
+  syncAllPeers();
+  broadcastMediaState();
+  renderAll();
+  Toast.info('Compartilhamento encerrado');
+}
+
+async function applyVideoConstraints() {
+  const quality = state.settings.videoQuality;
+  const dims = { '1080p': [1920, 1080], '720p': [1280, 720], '480p': [854, 480], '360p': [640, 360] }[quality] || [1280, 720];
+
+  try {
+    const track = state.localStream?.getVideoTracks()[0];
+    if (track) {
+      await track.applyConstraints({
+        width: { ideal: dims[0] },
+        height: { ideal: dims[1] },
+        frameRate: { ideal: state.settings.frameRate }
+      });
+    }
+  } catch (e) {
+    Logger.error('Apply video constraints failed:', e);
+  }
+
+  // Limites de envio para câmera e tela
+  state.peers.forEach(peer => {
+    ['camera', 'screen'].forEach(role => {
+      const sender = peer.roles[role]?.sender;
+      if (!sender || !sender.track) return;
+      const parameters = sender.getParameters();
+      if (!parameters.encodings || !parameters.encodings.length) parameters.encodings = [{}];
+      parameters.encodings[0].maxBitrate = state.settings.maxBitrate * 1000;
+      parameters.encodings[0].maxFramerate = state.settings.frameRate;
+      sender.setParameters(parameters).catch(e => Logger.warn('Set parameters failed:', e));
+    });
+  });
+}
+
+// ============================================
+// Estado dos participantes
+// ============================================
+// O que cada um está transmitindo / se o microfone está aberto
+function flagsOf(sessionId) {
+  if (sessionId === state.sessionId) {
+    return {
+      mic: state.muteState === 'UNMUTED' && !!state.localStream?.getAudioTracks().length,
+      camera: !state.media.cameraMuted && !!state.localStream?.getVideoTracks().length,
+      screen: state.media.screenShare,
+      deafened: state.deafened
+    };
+  }
+  const p = state.participants.get(sessionId);
+  const meta = p?.metadata || {};
+  const muteState = p?.mute_state ?? meta.mute_state;
+  return {
+    mic: muteState ? muteState === 'UNMUTED' : meta.microphoneMuted !== true,
+    camera: meta.cameraMuted === false,
+    screen: meta.screenShare === true,
+    deafened: meta.deafened === true
+  };
+}
+
+function firstRemoteOrSelf() {
+  return state.order.find(id => id !== state.sessionId) || state.sessionId;
+}
+
+// Quando o participante em exibição começa/para de compartilhar, acompanha
+function autoAdjustTab(sessionId, before, after) {
+  if (state.view.sessionId !== sessionId) return;
+  if (!before.screen && after.screen) {
+    // Passou a compartilhar a tela: mostra a tela, com a câmera (se houver) flutuando
+    state.view.tab = 'screen';
+    state.view.tabPref.delete(sessionId);
+  } else if (before.screen && !after.screen && state.view.tab === 'screen') {
+    state.view.tab = 'camera';
+    state.view.tabPref.delete(sessionId);
+  }
+}
+
+function connectionLabel(sessionId) {
+  if (sessionId === state.sessionId) return null;
+  const peer = state.peers.get(sessionId);
+  const status = peer?.pc.connectionState;
+  if (!peer || status === 'new' || status === 'connecting') return 'Conectando...';
+  if (status === 'failed' || status === 'disconnected') return 'Sem conexão';
+  return null;
+}
+
+// ============================================
+// Seleção e palco
+// ============================================
+function selectParticipant(sessionId, { tab, manual = true } = {}) {
+  const wasMulti = isMultiActive();
+
+  if (!sessionId || !state.participants.has(sessionId)) {
+    state.view.sessionId = null;
+    renderAll();
+    return;
+  }
+
+  state.view.sessionId = sessionId;
+  if (manual) {
+    state.view.manual = true;
+    state.view.grid = false; // escolher alguém sai da visão em blocos
+  }
+
+  if (tab) {
+    state.view.tab = tab;
+    state.view.tabPref.set(sessionId, tab);
+  } else {
+    // Abre direto no que a pessoa está transmitindo: tela, se houver
+    state.view.tab = state.view.tabPref.get(sessionId) || (flagsOf(sessionId).screen ? 'screen' : 'camera');
+  }
+
+  // Seleção automática (ex.: participante da aba atual saiu) não deve
+  // expulsar o usuário do Várias telas. Seleção manual, sim: mostra a pessoa.
+  if (wasMulti && !manual) {
+    state.view.grid = false;
+    state.view.tab = 'multi';
+  }
+
+  renderAll();
+  toggleSide(false);
+}
+
+function setViewTab(tab) {
+  if (tab === 'multi') {
+    if (!state.view.multi.created) return;
+    enterMultiTab();
+    return;
+  }
+
+  const leavingMulti = isMultiActive();
+  if (leavingMulti) {
+    state.view.tab = multiUnderlyingTab();
+    state.view.grid = false;
+  }
+
+  if (tab === 'grid') {
+    state.view.grid = true;
+    renderAll(); // a lista da esquerda deixa de marcar alguém
+    return;
+  }
+
+  const id = state.view.sessionId;
+  if (!id) {
+    renderAll();
+    return;
+  }
+
+  const leavingGrid = state.view.grid;
+  state.view.grid = false;
+  state.view.tab = tab;
+  state.view.tabPref.set(id, tab);
+  if (leavingGrid || leavingMulti) renderAll();
+  else renderStage();
+}
+
+function toggleSplit() {
+  if (isMultiActive()) {
+    state.view.tab = multiUnderlyingTab();
+    state.view.grid = false;
+  }
+  state.view.split = !state.view.split;
+  state.view.grid = false;
+  Storage.set('roomView', { split: state.view.split });
+  updateMediaButtons();
+  renderStage();
+}
+
+function selfCameraStream() {
+  const track = state.localStream?.getVideoTracks()[0];
+  if (!track) return null;
+  if (!selfCameraCache || selfCameraCache.track !== track) {
+    selfCameraCache = { track, stream: new MediaStream([track]) };
+  }
+  return selfCameraCache.stream;
+}
+
+// ============================================
+// Várias telas (grade dinâmica de telas)
+// ============================================
+// Reaproveita os streams de tela que já chegam pelo peer connection: nenhuma
+// conexão nova é criada nem uma nova captura é pedida aos participantes.
+const MULTI_MAX_SCREENS = 4;
+const multiTiles = new Map(); // sessionId -> { el, video, status, avatar, name, remove }
+let multiHeaderSig = null; // evita recriar os avatares a cada atualização de áudio
+let multiPickerSig = null; // evita recriar o seletor aberto a cada atualização
+let multiLayoutTimer = 0;
+let multiFocus = null; // foco visual: mesmo stream, sem nova conexão WebRTC
+
+function setupMultiWorkspace() {
+  if (!elements.stage) return;
+  // A quantidade de colunas depende do espaço real do palco (janela normal,
+  // tela cheia e janela flutuante). O ResizeObserver recalcula sozinho.
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      if (!isMultiActive()) return;
+      layoutMultiGrid();
+      if (multiFocus) layoutMultiFocus();
+    }).observe(elements.stage);
+  }
+}
+
+function createMultiState() {
+  return {
+    created: false,
+    participants: [],      // sessionIds na ordem exibida
+    previousTab: null,     // aba para onde voltar ao fechar o workspace
+    focus: null,           // tela com destaque visual/áudio
+    pickerOpen: false,
+    pendingInitial: null,  // tela já assistida, guardada até criar o workspace
+    pendingPreviousTab: null,
+    errors: new Set()      // sessionIds cujo <video> falhou ao tocar
+  };
+}
+
+// Todos os participantes com compartilhamento de tela ativo, na ordem da sala.
+function activeShareIds() {
+  return state.order.filter(id => state.participants.has(id) && flagsOf(id).screen);
+}
+
+function isMultiActive() {
+  return state.view.multi.created && state.view.tab === 'multi' && !state.view.grid;
+}
+
+function activeTab() {
+  if (state.view.grid) return 'grid';
+  if (state.view.tab === 'multi' && state.view.multi.created) return 'multi';
+  return state.view.tab === 'screen' ? 'screen' : 'camera';
+}
+
+// Aba individual usada por baixo do Várias telas (para onde os controles
+// individuais voltam quando o usuário sai da aba, sem fechar o workspace).
+function multiUnderlyingTab() {
+  const prev = state.view.multi.previousTab;
+  if (prev === 'camera' || prev === 'screen') return prev;
+  const id = state.view.sessionId;
+  return (id && state.participants.has(id) && flagsOf(id).screen) ? 'screen' : 'camera';
+}
+
+// Stream de tela que já existe (próprio ou remoto), sem pedir nada novo.
+function screenStreamFor(sessionId) {
+  if (!sessionId || !state.participants.has(sessionId)) return null;
+  if (!flagsOf(sessionId).screen) return null;
+  if (sessionId === state.sessionId) return state.screenStream;
+  return state.peers.get(sessionId)?.screenStream || null;
+}
+
+// A tela que o usuário já estava assistindo será a primeira do workspace.
+function preferredInitialShare() {
+  const shares = activeShareIds();
+  if (!shares.length) return null;
+  const selected = state.view.sessionId;
+  if (selected && shares.includes(selected)) return selected;
+  return shares.find(id => id !== state.sessionId) || shares[0];
+}
+
+// O botão aparece com duas ou mais telas ativas e continua disponível
+// enquanto o workspace existir, mesmo que reste uma tela só.
+function updateMultiButton() {
+  const btn = elements.multiBtn;
+  if (!btn) return;
+  const multi = state.view.multi;
+  const count = activeShareIds().length;
+  btn.hidden = !(multi.created || count >= 2);
+
+  const active = isMultiActive();
+  btn.classList.toggle('is-active', active);
+  btn.setAttribute('aria-pressed', String(active));
+  const label = multi.created
+    ? (active ? 'Várias telas' : 'Abrir Várias telas')
+    : 'Ver várias telas ao mesmo tempo';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+function onMultiButton() {
+  const multi = state.view.multi;
+  if (!multi.created) {
+    openMultiPicker();
+    return;
+  }
+  if (!isMultiActive()) enterMultiTab();
+}
+
+// Botão compacto no cabeçalho do workspace. No limite, fica desabilitado;
+// o wrapper mantém o tooltip visível mesmo com o botão nativo desabilitado.
+function updateMultiAddButton() {
+  const wrap = elements.multiAddWrap;
+  const btn = elements.multiAddBtn;
+  if (!wrap || !btn) return;
+
+  const active = isMultiActive();
+  wrap.hidden = !active;
+  if (!active) {
+    btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+
+  const full = state.view.multi.participants.length >= MULTI_MAX_SCREENS;
+  const tip = full
+    ? `Máximo de ${MULTI_MAX_SCREENS} telas em Várias telas`
+    : 'Adicionar tela';
+  btn.disabled = full;
+  btn.setAttribute('aria-disabled', String(full));
+  btn.setAttribute('aria-expanded', String(state.view.multi.pickerOpen));
+  btn.setAttribute('aria-label', tip);
+  btn.title = tip;
+  wrap.title = tip;
+  wrap.classList.toggle('is-full', full);
+}
+
+function onMultiAddButton() {
+  const multi = state.view.multi;
+  if (!isMultiActive() || multi.participants.length >= MULTI_MAX_SCREENS) return;
+  if (multi.pickerOpen) closeMultiPicker();
+  else openMultiPicker();
+}
+
+function enterMultiTab() {
+  const multi = state.view.multi;
+  if (!multi.created) return;
+  const current = activeTab();
+  if (current !== 'multi') multi.previousTab = current;
+  state.view.grid = false;
+  state.view.tab = 'multi';
+  renderAll();
+}
+
+function openMultiPicker() {
+  const multi = state.view.multi;
+  if (!multi.created) {
+    const initial = preferredInitialShare();
+    if (!initial) return;
+    multi.pendingInitial = initial;
+    multi.pendingPreviousTab = activeTab();
+  }
+  multi.pickerOpen = true;
+  renderStage();
+}
+
+function closeMultiPicker() {
+  const multi = state.view.multi;
+  if (!multi.pickerOpen) return;
+  multi.pickerOpen = false;
+  if (!multi.created) {
+    multi.pendingInitial = null;
+    multi.pendingPreviousTab = null;
+  }
+  renderStage();
+}
+
+function multiPickerOptions() {
+  const multi = state.view.multi;
+  const excluded = new Set(multi.participants);
+  if (!multi.created && multi.pendingInitial) excluded.add(multi.pendingInitial);
+  return activeShareIds().filter(id => !excluded.has(id));
+}
+
+function selectMultiParticipant(sessionId) {
+  const multi = state.view.multi;
+  if (!sessionId || !state.participants.has(sessionId) || !flagsOf(sessionId).screen) {
+    multi.pickerOpen = false;
+    Toast.info('Essa tela não está mais disponível');
+    renderStage();
+    return;
+  }
+  if (multi.participants.includes(sessionId)) return;
+  if (multi.participants.length >= MULTI_MAX_SCREENS) {
+    multi.pickerOpen = false;
+    Toast.info(`Máximo de ${MULTI_MAX_SCREENS} telas em Várias telas`);
+    renderStage();
+    return;
+  }
+
+  if (!multi.created) {
+    let initial = multi.pendingInitial;
+    if (!initial || initial === sessionId || !state.participants.has(initial) || !flagsOf(initial).screen) {
+      initial = activeShareIds().find(id => id !== sessionId) || null;
+    }
+
+    multi.created = true;
+    multi.participants = initial ? [initial, sessionId] : [sessionId];
+    multi.focus = sessionId;
+    multi.previousTab = multi.pendingPreviousTab || activeTab();
+    multi.pendingInitial = null;
+    multi.pendingPreviousTab = null;
+    multi.pickerOpen = false;
+    state.view.grid = false;
+    state.view.tab = 'multi';
+
+    // O PiP comum prende um <video>; criar o workspace troca o palco.
+    if (popout.mode === 'video') closePopout();
+
+    renderAll();
+    Logger.log('Várias telas criado:', multi.participants);
+    return;
+  }
+
+  multi.participants.push(sessionId);
+  multi.focus = sessionId;
+  multi.pickerOpen = false;
+  multi.errors.delete(sessionId);
+  renderAll();
+}
+
+function finalizeMultiRemoval(sessionId) {
+  const multi = state.view.multi;
+  const index = multi.participants.indexOf(sessionId);
+  if (index === -1) return;
+
+  multi.participants.splice(index, 1);
+  if (multi.focus === sessionId) multi.focus = multi.participants[0] || null;
+  multi.errors.delete(sessionId);
+  destroyMultiTile(sessionId);
+  renderAll();
+}
+
+function removeMultiParticipant(sessionId) {
+  const multi = state.view.multi;
+  if (!multi.created || !sessionId) return;
+  if (!multi.participants.includes(sessionId)) return;
+  if (multiFocus?.id === sessionId) closeMultiFocus({ immediate: true });
+
+  const tile = multiTiles.get(sessionId);
+  if (tile && !tile.el.classList.contains('is-removing')) {
+    tile.el.classList.add('is-removing');
+    const workspace = multi;
+    setTimeout(() => {
+      // A aba pode ter sido fechada e recriada durante a animação: não mexa
+      // no workspace novo por causa de uma remoção do workspace anterior.
+      if (state.view.multi === workspace) finalizeMultiRemoval(sessionId);
+    }, 150);
+    return;
+  }
+  finalizeMultiRemoval(sessionId);
+}
+
+function focusMultiParticipant(sessionId) {
+  const multi = state.view.multi;
+  if (!isMultiActive() || !multi.participants.includes(sessionId)) return;
+  if (multi.focus === sessionId) return;
+  multi.focus = sessionId;
+  updateMultiGridTiles();
+}
+
+// Clicar no nome/avatar de um tile abre a visão individual daquela pessoa.
+// A seleção manual já encerra a visão Várias telas, mas mantém a aba criada.
+function openMultiParticipantView(sessionId) {
+  if (!isMultiActive() || !sessionId || !state.participants.has(sessionId)) return;
+  const flags = flagsOf(sessionId);
+  closeMultiFocus({ immediate: true });
+  selectParticipant(sessionId, {
+    manual: true,
+    tab: flags.screen ? 'screen' : undefined
+  });
+}
+
+// ============================================
+// Foco visual de uma tela
+// ============================================
+// O foco usa um clone do <video> com o MESMO MediaStream já recebido. Nada é
+// reconectado, reiniciado ou recapturado: apenas a apresentação muda.
+function multiFocusMetrics() {
+  const stage = elements.stage;
+  const rect = stage.getBoundingClientRect();
+  const margin = Math.max(12, Math.min(28, rect.width * 0.02));
+  const maxW = Math.max(1, Math.min(window.innerWidth * 0.57, rect.width - margin * 2));
+  const maxH = Math.max(1, rect.height - margin * 2);
+  const width = Math.min(maxW, maxH * (16 / 9));
+  const height = width * (9 / 16);
+  return {
+    width,
+    height,
+    x: (rect.width - width) / 2,
+    y: (rect.height - height) / 2
+  };
+}
+
+function openMultiFocus(sessionId) {
+  if (!isMultiActive() || multiFocus) return;
+  const tile = multiTiles.get(sessionId);
+  if (!tile) return;
+
+  const stream = screenStreamFor(sessionId) || tile.video.srcObject;
+  if (!stream) return;
+
+  const stage = elements.stage;
+  const stageRect = stage.getBoundingClientRect();
+  const tileRect = tile.el.getBoundingClientRect();
+  const target = multiFocusMetrics();
+
+  const layer = document.createElement('div');
+  layer.className = 'multi-focus-layer';
+  layer.setAttribute('role', 'dialog');
+  layer.setAttribute('aria-label', 'Tela em foco');
+
+  const card = document.createElement('div');
+  card.className = 'multi-focus-card';
+  card.style.width = `${target.width}px`;
+  card.style.height = `${target.height}px`;
+
+  const video = document.createElement('video');
+  video.playsInline = true;
+  video.autoplay = true;
+  video.muted = true; // o áudio continua vindo do tile original
+  video.srcObject = stream;
+
+  const tag = tile.el.querySelector('.multi-tile-tag')?.cloneNode(true);
+  if (tag) {
+    tag.setAttribute('aria-hidden', 'true');
+    tag.removeAttribute('data-multi-open');
+    tag.removeAttribute('title');
+    tag.tabIndex = -1;
+  }
+
+  card.append(video);
+  if (tag) card.append(tag);
+  layer.append(card);
+  stage.append(layer);
+
+  const sx = tileRect.left - stageRect.left;
+  const sy = tileRect.top - stageRect.top;
+  const scaleX = tileRect.width / target.width;
+  const scaleY = tileRect.height / target.height;
+  card.style.transform = `translate(${sx}px, ${sy}px) scale(${scaleX}, ${scaleY})`;
+  void card.offsetWidth;
+
+  multiFocus = { id: sessionId, layer, card, video, target, opened: false, closing: false, timer: 0 };
+  stage.classList.add('has-multi-focus');
+  playMedia(video);
+
+  // Clicar no fundo fecha; clicar no cartão (vídeo/tag) não.
+  layer.addEventListener('click', (e) => {
+    if (e.target === layer) closeMultiFocus();
+  });
+
+  requestAnimationFrame(() => {
+    if (!multiFocus || multiFocus.layer !== layer || multiFocus.closing) return;
+    multiFocus.opened = true;
+    layer.classList.add('is-open');
+    card.style.transform = `translate(${target.x}px, ${target.y}px) scale(1, 1)`;
+  });
+}
+
+function layoutMultiFocus() {
+  const focus = multiFocus;
+  if (!focus || !focus.opened || focus.closing) return;
+  const target = multiFocusMetrics();
+  focus.target = target;
+  focus.card.style.width = `${target.width}px`;
+  focus.card.style.height = `${target.height}px`;
+  focus.card.style.transform = `translate(${target.x}px, ${target.y}px) scale(1, 1)`;
+}
+
+function closeMultiFocus({ immediate = false } = {}) {
+  const focus = multiFocus;
+  if (!focus) return;
+
+  if (immediate) {
+    if (focus.timer) clearTimeout(focus.timer);
+    focus.layer.remove();
+    if (focus.video) focus.video.srcObject = null;
+    elements.stage?.classList.remove('has-multi-focus');
+    multiFocus = null;
+    return;
+  }
+  if (focus.closing) return;
+  focus.closing = true;
+  focus.layer.classList.remove('is-open');
+
+  // Volta para a posição atual do tile (se ele ainda existir), preservando
+  // o grid exatamente como estava por baixo.
+  const tile = multiTiles.get(focus.id);
+  if (tile) {
+    const stageRect = elements.stage.getBoundingClientRect();
+    const tileRect = tile.el.getBoundingClientRect();
+    const sx = tileRect.left - stageRect.left;
+    const sy = tileRect.top - stageRect.top;
+    focus.card.style.transform = `translate(${sx}px, ${sy}px) scale(${tileRect.width / focus.target.width}, ${tileRect.height / focus.target.height})`;
+  } else {
+    focus.card.style.opacity = '0';
+  }
+
+  focus.timer = setTimeout(() => {
+    focus.layer.remove();
+    if (focus.video) focus.video.srcObject = null;
+    elements.stage?.classList.remove('has-multi-focus');
+    if (multiFocus === focus) multiFocus = null;
+  }, 300);
+}
+
+// Fecha o workspace: some com a aba, com os tiles e com a seleção. Não para
+// o compartilhamento de ninguém. Volta para a aba ativa antes do Várias telas.
+function closeMultiWorkspace() {
+  const multi = state.view.multi;
+  if (!multi.created) return;
+
+  const wasActive = isMultiActive();
+  const back = multi.previousTab;
+  const underlying = multiUnderlyingTab();
+
+  destroyMultiWorkspace();
+
+  if (wasActive) {
+    state.view.grid = back === 'grid';
+    if (back === 'grid') {
+      state.view.tab = underlying;
+    } else {
+      state.view.tab = (back === 'camera' || back === 'screen') ? back : underlying;
+      if (state.view.sessionId) state.view.tabPref.set(state.view.sessionId, state.view.tab);
+    }
+  }
+  renderAll();
+}
+
+function destroyMultiWorkspace() {
+  closeMultiFocus({ immediate: true });
+  multiTiles.forEach((_, id) => destroyMultiTile(id));
+  multiTiles.clear();
+  if (multiLayoutTimer) {
+    clearTimeout(multiLayoutTimer);
+    multiLayoutTimer = 0;
+  }
+  if (elements.multiGrid) {
+    elements.multiGrid.replaceChildren();
+    elements.multiGrid.classList.remove('is-layout-animating');
+  }
+  if (elements.multiPicker) elements.multiPicker.hidden = true;
+  if (elements.multiEmpty) elements.multiEmpty.hidden = true;
+  if (elements.multiAddWrap) elements.multiAddWrap.hidden = true;
+  state.view.multi = createMultiState();
+  multiHeaderSig = null;
+  multiPickerSig = null;
+  elements.stage?.classList.remove('is-multi');
+  elements.stageHead?.classList.remove('is-multi-head');
+}
+
+// Mantém a grade coerente com o estado real das telas. Não adiciona ninguém
+// automaticamente: telas novas só entram quando o usuário escolhe.
+function syncMultiState() {
+  const multi = state.view.multi;
+  if (!multi.created) return;
+
+  const active = new Set(activeShareIds());
+  const kept = multi.participants.filter(id => active.has(id) && state.participants.has(id));
+  const removed = multi.participants.filter(id => !kept.includes(id));
+
+  if (multiFocus && !kept.includes(multiFocus.id)) closeMultiFocus({ immediate: true });
+
+  if (removed.length) {
+    multi.participants = kept;
+    removed.forEach(id => {
+      multi.errors.delete(id);
+      destroyMultiTile(id);
+    });
+  }
+
+  if (multi.focus && !multi.participants.includes(multi.focus)) {
+    multi.focus = multi.participants[0] || null;
+  }
+  if (!multi.focus && multi.participants.length) multi.focus = multi.participants[0];
+
+  multi.errors.forEach(id => {
+    if (!multi.participants.includes(id)) multi.errors.delete(id);
+  });
+}
+
+function multiTileEl(sessionId) {
+  let tile = multiTiles.get(sessionId);
+  if (tile) return tile;
+
+  const el = document.createElement('div');
+  el.className = 'multi-tile';
+  el.dataset.multiTile = sessionId;
+  el.innerHTML = `
+    <video playsinline autoplay></video>
+    <div class="multi-tile-status"></div>
+    <button type="button" class="multi-tile-tag" data-multi-open="${escapeAttr(sessionId)}" aria-label="Ver a tela">
+      <span class="user-avatar multi-tile-avatar"></span>
+      <span class="multi-tile-name"></span>
+    </button>
+    <button type="button" class="multi-tile-remove" data-multi-remove="${escapeAttr(sessionId)}" aria-label="Remover tela" title="Remover tela">${ICONS.close}</button>
+  `;
+
+  const video = el.querySelector('video');
+  tile = {
+    el,
+    video,
+    status: el.querySelector('.multi-tile-status'),
+    avatar: el.querySelector('.multi-tile-avatar'),
+    name: el.querySelector('.multi-tile-name'),
+    tag: el.querySelector('.multi-tile-tag'),
+    remove: el.querySelector('.multi-tile-remove'),
+    avatarSig: ''
+  };
+
+  const refresh = () => {
+    if (isMultiActive()) updateMultiTile(sessionId);
+  };
+  ['loadeddata', 'canplay', 'playing'].forEach(ev => video.addEventListener(ev, refresh));
+  video.addEventListener('error', () => {
+    if (!isMultiActive()) return;
+    state.view.multi.errors.add(sessionId);
+    updateMultiTile(sessionId);
+  });
+
+  multiTiles.set(sessionId, tile);
+  return tile;
+}
+
+function updateMultiTile(sessionId) {
+  const tile = multiTiles.get(sessionId);
+  const multi = state.view.multi;
+  if (!tile || !multi.participants.includes(sessionId)) return;
+
+  const participant = state.participants.get(sessionId);
+  if (!participant) return;
+
+  const isSelf = sessionId === state.sessionId;
+  const peer = state.peers.get(sessionId);
+  const flags = flagsOf(sessionId);
+  const conn = connectionLabel(sessionId);
+  const focused = multi.focus === sessionId;
+
+  tile.el.classList.toggle('is-focused', focused);
+
+  const name = participant.display_name || 'Jogador';
+  const label = name + (isSelf ? ' (você)' : '');
+  if (tile.name.textContent !== label) tile.name.textContent = label;
+  const openLabel = `Ver a tela de ${label}`;
+  if (tile.tag.getAttribute('aria-label') !== openLabel) {
+    tile.tag.setAttribute('aria-label', openLabel);
+    tile.tag.title = openLabel;
+  }
+  const avatarSig = `${name}|${(participant.avatar_data || '').length}`;
+  if (tile.avatarSig !== avatarSig) {
+    tile.avatarSig = avatarSig;
+    setAvatar(tile.avatar, participant.avatar_data, name);
+  }
+
+  // O áudio da tela toca só na tela em foco, como no modo individual.
+  tile.video.muted = isSelf || state.deafened || !!peer?.localMuted || !focused;
+
+  const wanted = flags.screen ? screenStreamFor(sessionId) : null;
+  if (tile.video.srcObject !== (wanted || null)) {
+    tile.video.srcObject = wanted || null;
+    multi.errors.delete(sessionId);
+    if (wanted) playMedia(tile.video);
+  }
+
+  const errored = multi.errors.has(sessionId);
+  const playing = !!wanted && !errored && tile.video.readyState >= 2;
+  tile.el.classList.toggle('has-video', playing);
+
+  const key = `${flags.screen}|${errored}|${playing}|${conn || ''}|${wanted ? 's' : 'n'}`;
+  if (tile.status.dataset.key === key) return;
+  tile.status.dataset.key = key;
+
+  if (errored) {
+    tile.status.innerHTML = `<div class="multi-tile-msg">Não foi possível exibir esta tela</div>`;
+  } else if (!flags.screen) {
+    tile.status.innerHTML = `<div class="multi-tile-msg">Esta tela não está mais disponível</div>`;
+  } else if (conn === 'Sem conexão') {
+    tile.status.innerHTML = `<div class="multi-tile-msg">Sem conexão com esta tela</div>`;
+  } else if (conn) {
+    tile.status.innerHTML = `<div class="multi-tile-loading">
+      <svg class="multi-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+      <span>${escapeHtml(conn)}</span>
+    </div>`;
+  } else if (!playing) {
+    tile.status.innerHTML = `<div class="multi-tile-loading">
+      <svg class="multi-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+      <span>Carregando tela...</span>
+    </div>`;
+  } else {
+    tile.status.innerHTML = '';
+  }
+}
+
+function destroyMultiTile(sessionId) {
+  const tile = multiTiles.get(sessionId);
+  if (!tile) return;
+  if (tile.video.srcObject) tile.video.srcObject = null;
+  tile.el.remove();
+  multiTiles.delete(sessionId);
+}
+
+function updateMultiGridTiles() {
+  state.view.multi.participants.forEach(updateMultiTile);
+}
+
+// Calcula o tamanho dos tiles para caber inteiro na área visível. A grade é
+// flexível para centralizar automaticamente qualquer linha incompleta.
+// Mantém 16:9 e usa sempre 2 colunas (exceto com uma tela), o que garante:
+// 1 tela centralizada, 2 lado a lado, 3 em 2+1 e 4 em 2x2.
+function layoutMultiGrid(total = state.view.multi.participants.length) {
+  const grid = elements.multiGrid;
+  const stage = elements.stage;
+  if (!grid || !stage) return;
+
+  const stageStyle = getComputedStyle(stage);
+  const gridStyle = getComputedStyle(grid);
+  const stagePadX = (parseFloat(stageStyle.paddingLeft) || 0) + (parseFloat(stageStyle.paddingRight) || 0);
+  const stagePadY = (parseFloat(stageStyle.paddingTop) || 0) + (parseFloat(stageStyle.paddingBottom) || 0);
+  const gridPadX = (parseFloat(gridStyle.paddingLeft) || 0) + (parseFloat(gridStyle.paddingRight) || 0);
+  const gridPadY = (parseFloat(gridStyle.paddingTop) || 0) + (parseFloat(gridStyle.paddingBottom) || 0);
+  const availW = Math.max(1, stage.clientWidth - stagePadX - gridPadX);
+  const availH = Math.max(1, stage.clientHeight - stagePadY - gridPadY);
+  const gapX = parseFloat(gridStyle.columnGap) || 12;
+  const gapY = parseFloat(gridStyle.rowGap) || gapX;
+
+  const count = Math.max(0, total);
+  if (!count) {
+    grid.style.width = '0px';
+    return;
+  }
+
+  const cols = count === 1 ? 1 : 2;
+  const rows = Math.ceil(count / cols);
+  const widthByCols = (availW - (cols - 1) * gapX) / cols;
+  const heightByRows = (availH - (rows - 1) * gapY) / rows;
+  const tileW = Math.min(widthByCols, heightByRows * (16 / 9));
+  const tileH = tileW * (9 / 16);
+  if (!(tileW > 0) || !(tileH > 0)) return;
+
+  // Arredonda para baixo para nunca estourar a área visível por 1px.
+  const safeW = Math.max(1, Math.floor(tileW * 100) / 100);
+  const safeH = Math.max(1, Math.floor(safeW * (9 / 16) * 100) / 100);
+  const tilesW = cols * safeW + (cols - 1) * gapX;
+  const gridW = Math.min(availW + gridPadX, tilesW + gridPadX);
+  const small = safeH < 110;
+
+  grid.style.width = `${gridW}px`;
+  grid.style.gridTemplateColumns = '';
+  grid.style.gridTemplateRows = '';
+  [...elements.multiGrid.children].forEach(tile => {
+    tile.style.width = `${safeW}px`;
+    tile.style.height = `${safeH}px`;
+    tile.style.setProperty('--tile-h', `${safeH}px`);
+    tile.classList.toggle('is-small', small);
+  });
+}
+
+function animateMultiLayout() {
+  const grid = elements.multiGrid;
+  if (!grid) return;
+  if (multiLayoutTimer) clearTimeout(multiLayoutTimer);
+  grid.classList.add('is-layout-animating');
+  multiLayoutTimer = setTimeout(() => {
+    grid.classList.remove('is-layout-animating');
+    multiLayoutTimer = 0;
+  }, 220);
+}
+
+function renderMultiGrid() {
+  if (!elements.multiGrid) return;
+  const multi = state.view.multi;
+  const ids = multi.participants.filter(id => state.participants.has(id));
+
+  [...multiTiles.keys()].forEach(id => {
+    if (!ids.includes(id)) destroyMultiTile(id);
+  });
+
+  const nodes = ids.map(id => multiTileEl(id).el);
+  // A ordem não muda enquanto os participantes são adicionados/removidos;
+  // só troca o DOM quando realmente precisa (evita reiniciar os vídeos).
+  const current = [...elements.multiGrid.children];
+  const changed = current.length !== nodes.length || nodes.some((node, i) => current[i] !== node);
+  if (changed) {
+    elements.multiGrid.replaceChildren(...nodes);
+    animateMultiLayout();
+  }
+
+  ids.forEach(updateMultiTile);
+  layoutMultiGrid(ids.length);
+  if (elements.multiEmpty) elements.multiEmpty.hidden = !isMultiActive() || ids.length > 0;
+}
+
+// Libera os vídeos ao trocar de aba, sem perder a ordem nem a seleção.
+function releaseMultiMedia() {
+  multiTiles.forEach(tile => {
+    if (tile.video.srcObject) tile.video.srcObject = null;
+  });
+}
+
+function renderMultiHeader() {
+  const ids = state.view.multi.participants.filter(id => state.participants.has(id));
+  elements.viewingName.textContent = 'Várias telas';
+  if (popout.nameEl) popout.nameEl.textContent = 'Várias telas';
+  const sig = ids.map(id => {
+    const p = state.participants.get(id);
+    return `${id}:${p.display_name || ''}:${(p.avatar_data || '').length}`;
+  }).join('|');
+  if (sig === multiHeaderSig) return;
+  multiHeaderSig = sig;
+  elements.viewingAvatar.classList.remove('audio-active');
+  groupAvatarSig = '';
+
+  if (ids.length > 1) {
+    elements.viewingAvatar.classList.add('is-stack');
+    elements.viewingAvatar.style.cssText = '';
+    elements.viewingAvatar.innerHTML = ids.slice(0, 3)
+      .map(id => avatarHtml(state.participants.get(id)))
+      .join('');
+  } else if (ids.length === 1) {
+    elements.viewingAvatar.classList.remove('is-stack');
+    const p = state.participants.get(ids[0]);
+    setAvatar(elements.viewingAvatar, p.avatar_data, p.display_name);
+  } else {
+    elements.viewingAvatar.classList.remove('is-stack');
+    elements.viewingAvatar.innerHTML = '';
+    elements.viewingAvatar.style.cssText = '';
+  }
+}
+
+function renderMultiStage() {
+  if (!elements.stage || !state.view.multi.created) return;
+  syncMultiState();
+
+  const stage = elements.stage;
+  stage.classList.remove('is-empty', 'is-grid', 'split');
+  stage.classList.add('is-multi');
+  elements.stageHead?.classList.add('is-multi-head');
+  elements.camRestore.hidden = true;
+  elements.viewTabs.hidden = false;
+  elements.viewTabs.classList.remove('is-hidden');
+  elements.multiTabSlot.hidden = false;
+  elements.viewTabMulti.setAttribute('aria-selected', 'true');
+  elements.viewTabGrid.setAttribute('aria-selected', 'false');
+  elements.viewTabCamera.setAttribute('aria-selected', 'false');
+  elements.viewTabScreen.setAttribute('aria-selected', 'false');
+  elements.viewTabCamera.classList.remove('is-live');
+  elements.viewTabScreen.classList.remove('is-live');
+
+  const participant = state.participants.get(state.view.sessionId);
+  const showKindTabs = !!participant;
+  elements.viewTabCamera.hidden = !showKindTabs;
+  elements.viewTabScreen.hidden = !showKindTabs;
+  if (participant) {
+    const flags = flagsOf(state.view.sessionId);
+    elements.viewTabCamera.classList.toggle('is-live', flags.camera);
+    elements.viewTabScreen.classList.toggle('is-live', flags.screen);
+  }
+
+  ['camera', 'screen'].forEach(kind => {
+    const p = elements.panes[kind];
+    p.pane.hidden = true;
+    p.pane.classList.remove('is-floating');
+    if (p.video.srcObject) p.video.srcObject = null;
+  });
+
+  renderMultiHeader();
+  renderMultiGrid();
+  renderMultiPicker();
+  updateMultiAddButton();
+}
+
+// Ao sair da aba, as mídias são liberadas mas os tiles e a ordem continuam
+// guardados para a volta (a aba Várias telas não é fechada).
+function hideMultiStage() {
+  closeMultiFocus({ immediate: true });
+  elements.stage?.classList.remove('is-multi');
+  elements.stageHead?.classList.remove('is-multi-head');
+  if (elements.multiEmpty) elements.multiEmpty.hidden = true;
+  releaseMultiMedia();
+  multiHeaderSig = null;
+  elements.multiTabSlot.hidden = !state.view.multi.created;
+  elements.viewTabMulti.setAttribute('aria-selected', 'false');
+}
+
+function renderMultiPicker() {
+  const picker = elements.multiPicker;
+  const panel = elements.multiPickerPanel;
+  const multi = state.view.multi;
+  if (!picker || !panel) return;
+
+  if (!multi.pickerOpen) {
+    multiPickerSig = null;
+    if (!picker.hidden) {
+      picker.hidden = true;
+      panel.innerHTML = '';
+    }
+    return;
+  }
+
+  const options = multiPickerOptions();
+  const sig = options.map(id => {
+    const p = state.participants.get(id);
+    return `${id}:${p?.display_name || ''}:${(p?.avatar_data || '').length}`;
+  }).join('|');
+  if (sig === multiPickerSig) {
+    picker.hidden = false;
+    return;
+  }
+  multiPickerSig = sig;
+
+  const items = options.map(id => {
+    const p = state.participants.get(id);
+    if (!p) return '';
+    const isSelf = id === state.sessionId;
+    return `<button type="button" class="multi-pick-item" data-multi-select="${escapeAttr(id)}">
+      ${avatarHtml(p, 'multi-pick-avatar')}
+      <span class="multi-pick-name">${escapeHtml(p.display_name || 'Jogador')}${isSelf ? ' (você)' : ''}</span>
+      <span class="multi-pick-icon" aria-hidden="true">${ICONS.screen}</span>
+    </button>`;
+  }).join('');
+
+  picker.hidden = false;
+  panel.innerHTML = `
+    <div class="multi-picker-head">
+      <span>Adicionar tela</span>
+      <button type="button" class="multi-picker-close" data-multi-action="close-picker" aria-label="Fechar">${ICONS.close}</button>
+    </div>
+    <div class="multi-picker-list">
+      ${items || '<p class="multi-picker-empty">Ninguém mais está compartilhando a tela</p>'}
+    </div>`;
+}
+
+function renderAll() {
+  renderParticipants();
+  renderStage();
+}
+
+function renderStage() {
+  if (!elements.stage) return;
+
+  // Saiu do Várias telas (outra aba, fechamento etc.): o foco visual não
+  // deve sobreviver escondido por cima de outro modo de visualização.
+  if (!isMultiActive()) closeMultiFocus({ immediate: true });
+
+  // Mantém o workspace coerente com o estado real das telas antes de
+  // desenhar (participante saiu, parou de compartilhar etc.).
+  syncMultiState();
+  updateMultiButton();
+  updateMultiAddButton();
+
+  if (isMultiActive()) {
+    renderMultiStage();
+    return;
+  }
+
+  // Ao sair da aba Várias telas, o estado e os tiles continuam guardados;
+  // só as mídias são liberadas.
+  hideMultiStage();
+  renderMultiPicker();
+
+  const id = state.view.sessionId;
+  const participant = state.participants.get(id);
+  const view = state.view;
+  // Na janela flutuante não há lado a lado: mostra uma coisa por vez
+  const split = view.split && popout.mode !== 'document';
+
+  const grid = !!view.grid && state.participants.size > 0;
+
+  elements.stage.classList.remove('is-multi');
+  elements.stage.classList.toggle('is-empty', !participant && !grid);
+  elements.stage.classList.toggle('is-grid', grid);
+  elements.stage.classList.toggle('split', split && !grid);
+  elements.viewTabs.hidden = false;
+  elements.viewTabs.classList.toggle('is-hidden', state.participants.size === 0);
+  // Vídeo/Tela só fazem sentido com alguém selecionado e fora do lado a lado
+  const showKindTabs = !!participant && !split;
+  elements.viewTabCamera.hidden = !showKindTabs;
+  elements.viewTabScreen.hidden = !showKindTabs;
+  elements.viewTabGrid.setAttribute('aria-selected', String(grid));
+  elements.multiTabSlot.hidden = !state.view.multi.created;
+  elements.viewTabMulti.setAttribute('aria-selected', 'false');
+  syncCamResizeAvailability();
+
+  if (grid) {
+    elements.viewingName.textContent = 'Todos';
+    if (popout.nameEl) popout.nameEl.textContent = elements.viewingName.textContent;
+    renderGroupAvatar();
+    elements.viewingAvatar.classList.remove('audio-active');
+    [elements.viewTabCamera, elements.viewTabScreen].forEach(el => {
+      el.setAttribute('aria-selected', 'false');
+      el.classList.remove('is-live');
+    });
+    elements.camRestore.hidden = true;
+    ['camera', 'screen'].forEach(kind => {
+      const p = elements.panes[kind];
+      p.pane.hidden = true;
+      if (p.video.srcObject) p.video.srcObject = null;
+    });
+    renderGrid();
+    return;
+  }
+
+  if (!participant) {
+    elements.viewingName.textContent = '—';
+    if (popout.nameEl) popout.nameEl.textContent = '—';
+    elements.viewingAvatar.innerHTML = '';
+    elements.viewingAvatar.style.cssText = '';
+    elements.viewingAvatar.classList.remove('is-stack');
+    groupAvatarSig = '';
+    ['camera', 'screen'].forEach(kind => {
+      const p = elements.panes[kind];
+      p.pane.hidden = true;
+      if (p.video.srcObject) p.video.srcObject = null;
+    });
+    return;
+  }
+
+  const isSelf = id === state.sessionId;
+  const peer = state.peers.get(id);
+  const flags = flagsOf(id);
+
+  setAvatar(elements.viewingAvatar, participant.avatar_data, participant.display_name);
+  elements.viewingAvatar.classList.remove('is-stack');
+  groupAvatarSig = '';
+  if (state.audioActive.has(id)) {
+    elements.viewingAvatar.classList.add('audio-active');
+  } else {
+    elements.viewingAvatar.classList.remove('audio-active');
+  }
+  elements.viewingName.textContent = (participant.display_name || 'Jogador') + (isSelf ? ' (você)' : '');
+  if (popout.nameEl) popout.nameEl.textContent = elements.viewingName.textContent;
+
+  // Abas Vídeo | Tela
+  [['camera', elements.viewTabCamera, flags.camera], ['screen', elements.viewTabScreen, flags.screen]].forEach(([kind, el, live]) => {
+    el.setAttribute('aria-selected', String(view.tab === kind));
+    el.classList.toggle('is-live', live);
+  });
+
+  const connecting = !isSelf && connectionLabel(id) === 'Conectando...';
+
+  // Câmera
+  const cameraStream = isSelf ? selfCameraStream() : peer?.cameraStream;
+  // Tela + câmera ao mesmo tempo: a câmera vira uma janelinha arrastável sobre a tela
+  const canFloat = !split && view.tab === 'screen' && flags.screen && flags.camera && !!cameraStream;
+  if (!(flags.screen && flags.camera)) state.camHidden.delete(id); // recomeçou: volta a aparecer
+  const floating = canFloat && !state.camHidden.has(id);
+  // câmera ligada, mas fechada por mim: botãozinho para trazer de volta
+  elements.camRestore.hidden = !(canFloat && !floating);
+  elements.panes.camera.pane.classList.toggle('is-floating', floating);
+  renderPane('camera', {
+    visible: split || view.tab === 'camera' || floating,
+    stream: flags.camera ? cameraStream : null,
+    emptyKey: `cam:${id}:${flags.camera}:${connecting}`,
+    emptyHtml: flags.camera
+      ? `<div class="spinner-text">Carregando vídeo...</div>`
+      : `${avatarHtml(participant)}<div>Câmera desligada</div>${isSelf ? '<button class="empty-action" data-action="toggle-camera">Ligar câmera</button>' : ''}`
+  });
+
+  // Tela (o áudio da tela só toca enquanto estou olhando para ela)
+  const screenStream = isSelf ? state.screenStream : peer?.screenStream;
+  renderPane('screen', {
+    visible: split || view.tab === 'screen',
+    stream: flags.screen ? screenStream : null,
+    muted: isSelf || !!peer?.localMuted || state.deafened,
+    emptyKey: `scr:${id}:${flags.screen}:${connecting}`,
+    emptyHtml: flags.screen
+      ? `<div class="spinner-text">Carregando tela...</div>`
+      : `${ICONS.screen.replace('<svg', '<svg class="ic-big"')}<div>Nenhuma tela compartilhada</div>${isSelf ? '<button class="empty-action" data-action="toggle-screen">Compartilhar tela</button>' : ''}`
+  });
+
+  positionFloatingCamera();
+}
+
+// ---- Visão em blocos (aba Participantes) -----------------------------------
+function renderGrid() {
+  if (!elements.stageGrid) return;
+  elements.stageGrid.innerHTML = state.order.map(id => {
+    const p = state.participants.get(id);
+    if (!p) return '';
+    const isSelf = id === state.sessionId;
+    const flags = flagsOf(id);
+    const peer = state.peers.get(id);
+    const speaking = state.audioActive.has(id);
+    const locallyMuted = !!peer?.localMuted;
+    const micIcon = locallyMuted ? ICONS.volumeOff : (flags.deafened ? ICONS.headphonesOff : (flags.mic ? ICONS.mic : ICONS.micOff));
+    const micMuted = locallyMuted || flags.deafened || !flags.mic;
+    const name = escapeHtml(p.display_name || 'Jogador') + (isSelf ? ' (você)' : '');
+
+    const status = [];
+    if (flags.camera) status.push(`<span class="is-live">${ICONS.camera}Câmera</span>`);
+    if (flags.screen) status.push(`<span class="is-live">${ICONS.screen}Tela</span>`);
+    if (!status.length) status.push('<span>Só áudio</span>');
+
+    return `
+      <button type="button" class="grid-block" data-grid-select="${escapeAttr(id)}" aria-label="Ver ${escapeAttr(p.display_name || 'Jogador')}">
+        <span class="grid-mic ${micMuted ? 'muted' : ''}">${micIcon}</span>
+        ${avatarHtml(p, speaking ? 'audio-active' : '')}
+        <span class="grid-name">${name}</span>
+        <span class="grid-status">${status.join('')}</span>
+      </button>`;
+  }).join('');
+}
+
+// ---- Câmera flutuante (arrastável) ----------------------------------------
+function setCamHidden(hidden) {
+  const id = state.view.sessionId;
+  if (!id) return;
+  if (hidden) state.camHidden.add(id);
+  else state.camHidden.delete(id);
+  renderStage();
+}
+
+const CAM_MARGIN = 12;
+
+function positionFloatingCamera() {
+  const pane = elements.panes.camera.pane;
+  if (!pane.classList.contains('is-floating')) {
+    pane.style.left = pane.style.top = '';
+    return;
+  }
+  const stage = elements.stage.getBoundingClientRect();
+  const w = pane.offsetWidth;
+  const h = pane.offsetHeight;
+  const freeX = Math.max(0, stage.width - w - CAM_MARGIN * 2);
+  const freeY = Math.max(0, stage.height - h - CAM_MARGIN * 2);
+  pane.style.left = `${CAM_MARGIN + state.camPos.x * freeX}px`;
+  pane.style.top = `${CAM_MARGIN + state.camPos.y * freeY}px`;
+}
+
+function setupFloatingCamera() {
+  const pane = elements.panes.camera.pane;
+  let drag = null;
+
+  pane.addEventListener('pointerdown', (e) => {
+    if (!pane.classList.contains('is-floating') || e.button !== 0 || e.target.closest('.cam-close')) return;
+    const rect = pane.getBoundingClientRect();
+    drag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    pane.setPointerCapture(e.pointerId);
+    pane.classList.add('is-dragging');
+    e.preventDefault();
+  });
+
+  pane.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const stage = elements.stage.getBoundingClientRect();
+    const freeX = stage.width - pane.offsetWidth - CAM_MARGIN * 2;
+    const freeY = stage.height - pane.offsetHeight - CAM_MARGIN * 2;
+    const x = e.clientX - drag.dx - stage.left - CAM_MARGIN;
+    const y = e.clientY - drag.dy - stage.top - CAM_MARGIN;
+    state.camPos = {
+      x: freeX > 0 ? Math.min(1, Math.max(0, x / freeX)) : 1,
+      y: freeY > 0 ? Math.min(1, Math.max(0, y / freeY)) : 1
+    };
+    positionFloatingCamera();
+  });
+
+  const end = () => {
+    if (!drag) return;
+    drag = null;
+    pane.classList.remove('is-dragging');
+    Storage.set('cameraPos', state.camPos);
+  };
+  pane.addEventListener('pointerup', end);
+  pane.addEventListener('pointercancel', end);
+
+  // Mantém dentro do palco quando a janela (ou a janela flutuante) muda de tamanho
+  if ('ResizeObserver' in window) new ResizeObserver(positionFloatingCamera).observe(elements.stage);
+}
+
+function renderPane(kind, { visible, stream, muted = true, emptyKey, emptyHtml }) {
+  const { pane, video, empty } = elements.panes[kind];
+  pane.hidden = !visible;
+
+  const wanted = visible ? stream : null;
+  video.muted = muted;
+  if (video.srcObject !== (wanted || null)) {
+    video.srcObject = wanted || null;
+    if (wanted) playMedia(video);
+  }
+  pane.classList.toggle('has-video', !!wanted);
+
+  if (!wanted && empty.dataset.key !== emptyKey) {
+    empty.dataset.key = emptyKey;
+    empty.innerHTML = emptyHtml;
+  }
+}
+
+// ============================================
+// Lista de participantes
+// ============================================
+// ---- Moderacao (host) ------------------------------------------------------
+function renderAdminControls() {
+  if (elements.muteAllBtn) {
+    elements.muteAllBtn.hidden = !state.isHost || state.participants.size < 2;
+  }
+}
+
+
+// Legado: o servidor hoje manda `mute-state` (com origem e seq). Mantido para
+// compatibilidade com clientes/servidores antigos, delegando a mesma regra.
+function handleAdminMuted(payload) {
+  const mudo = payload?.muted === true;
+  if (!payload?.session_id) {
+    applyMuteState({
+      session_id: state.sessionId,
+      state: mudo ? 'HOST_MUTED' : 'UNMUTED',
+      by: payload?.by ?? null,
+      cause: 'host'
+    });
+    return;
+  }
+  applyMuteState({
+    session_id: payload.session_id,
+    state: mudo ? 'HOST_MUTED' : 'UNMUTED',
+    by: payload?.by ?? null,
+    cause: 'host'
+  });
+}
+
+function handleAdminCameraOff(payload) {
+  if (!payload?.session_id) {
+    if (!state.media.cameraMuted && state.localStream?.getVideoTracks().length) {
+      stopCamera();
+      broadcastMediaState();
+      updateMediaButtons();
+      renderAll();
+      Toast.info('O anfitrião desligou sua câmera');
+    }
+    return;
+  }
+  const p = state.participants.get(payload.session_id);
+  if (p) {
+    p.metadata = { ...(p.metadata || {}), cameraMuted: true };
+    renderParticipants();
+  }
+}
+
+function handleKicked() {
+  state.kicked = true;
+  Toast.warning('Você foi removido da sala');
+  try { state.ws?.close(); } catch { /* já fechado */ }
+  setTimeout(() => { window.location.href = `${API.baseUrl}/`; }, 900);
+}
+
+// ---- Redimensionamento da janela da câmera -------------------------------
+// A janela flutuante da câmera (aba de tela) se comporta como uma janela
+// comum: qualquer uma das quatro quinas redimensiona mantendo a proporção,
+// com o canto oposto servindo de âncora.
+const CAM_FLOAT_W_KEY = 'cameraFloatWidth';
+const FLOAT_MIN_W = 150;
+const FLOAT_MAX_W = 640;
+const FLOAT_PROPORCAO = 16 / 9;
+
+function floatWidthStored() {
+  const v = Number(Storage.get('roomView', {})[CAM_FLOAT_W_KEY]);
+  return Number.isFinite(v) ? Math.min(FLOAT_MAX_W, Math.max(FLOAT_MIN_W, v)) : null;
+}
+
+function aplicarLarguraFlutuante(largura, { reposicionar = true } = {}) {
+  const pane = elements.panes?.camera?.pane;
+  if (!pane) return;
+  const w = Math.min(FLOAT_MAX_W, Math.max(FLOAT_MIN_W, largura));
+  pane.style.width = `${w}px`;
+  if (reposicionar) positionFloatingCamera();
+}
+
+function salvarLarguraFlutuante() {
+  const pane = elements.panes?.camera?.pane;
+  if (!pane) return;
+  const view = Storage.get('roomView', {});
+  view[CAM_FLOAT_W_KEY] = Math.round(pane.getBoundingClientRect().width);
+  Storage.set('roomView', view);
+}
+
+// A quina só existe na aba de tela, com a câmera flutuando sobre a tela
+function syncCamResizeAvailability() {
+  const pane = elements.panes?.camera?.pane;
+  const stage = elements.stage;
+  if (!pane || !stage) return;
+  const flutuando = pane.classList.contains('is-floating');
+
+  if (flutuando) {
+    const salvo = floatWidthStored();
+    if (salvo) aplicarLarguraFlutuante(salvo);
+  } else {
+    pane.style.removeProperty('width');
+    pane.style.removeProperty('left');
+    pane.style.removeProperty('top');
+  }
+}
+
+function setupCameraResize() {
+  const stage = elements.stage;
+  const pane = elements.panes?.camera?.pane;
+  if (!stage || !pane) return;
+
+  const iniciar = (e, canto) => {
+    if (e.button !== 0 || !pane.classList.contains('is-floating')) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const caixaStage = stage.getBoundingClientRect();
+    const caixa = pane.getBoundingClientRect();
+    const inicioX = e.clientX;
+    const inicioY = e.clientY;
+    const baseW = caixa.width;
+    const baseH = caixa.height;
+    // posição relativa ao palco (a pane é absoluta dentro dele)
+    const baseLeft = caixa.left - caixaStage.left;
+    const baseTop = caixa.top - caixaStage.top;
+    const proporcao = baseH > 0 ? baseW / baseH : FLOAT_PROPORCAO;
+    const oeste = canto === 'nw' || canto === 'sw';
+    const norte = canto === 'nw' || canto === 'ne';
+    const larguraMinima = Math.max(FLOAT_MIN_W, (140) * proporcao);
+
+    document.body.classList.add('pane-resizing');
+    pane.style.left = `${baseLeft}px`;
+    pane.style.top = `${baseTop}px`;
+
+    // Não deixa a janela sair do palco: limita pela borda do lado oposto
+    const larguraMaxima = Math.min(
+      FLOAT_MAX_W,
+      oeste ? baseLeft + baseW : caixaStage.width - baseLeft,
+      norte ? (baseTop + baseH) * proporcao : (caixaStage.height - baseTop) * proporcao
+    );
+
+    const aoMover = (ev) => {
+      const dx = ev.clientX - inicioX;
+      const dy = ev.clientY - inicioY;
+      // afastar do centro cresce; o eixo dominante comanda e o outro vem da proporção
+      const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy * proporcao;
+      const bruta = oeste ? baseW - delta : baseW + delta;
+      const largura = Math.max(larguraMinima, Math.min(larguraMaxima, bruta));
+      const altura = largura / proporcao;
+
+      pane.style.width = `${largura}px`;
+      pane.style.left = `${oeste ? baseLeft + (baseW - largura) : baseLeft}px`;
+      pane.style.top = `${norte ? baseTop + (baseH - altura) : baseTop}px`;
+    };
+
+    const aoSoltar = () => {
+      document.removeEventListener('pointermove', aoMover);
+      document.removeEventListener('pointerup', aoSoltar);
+      document.body.classList.remove('pane-resizing');
+      salvarLarguraFlutuante();
+      // guarda a posição resultante para o próximo render não pular
+      const fimStage = stage.getBoundingClientRect();
+      const fim = pane.getBoundingClientRect();
+      const livreX = Math.max(0, fimStage.width - fim.width - 24);
+      const livreY = Math.max(0, fimStage.height - fim.height - 24);
+      state.camPos = {
+        x: livreX > 0 ? Math.min(1, Math.max(0, (fim.left - fimStage.left - 12) / livreX)) : 1,
+        y: livreY > 0 ? Math.min(1, Math.max(0, (fim.top - fimStage.top - 12) / livreY)) : 1
+      };
+      Storage.set('cameraPos', state.camPos);
+      positionFloatingCamera();
+    };
+
+    document.addEventListener('pointermove', aoMover);
+    document.addEventListener('pointerup', aoSoltar);
+  };
+
+  // Só inicia perto do traço desenhado: assim a área extra não rouba o clique
+  // do botão de fechar (que fica logo acima da quina nordeste).
+  const aceitaInicio = (quina, e) => {
+    const r = quina.getBoundingClientRect();
+    const canto = quina.dataset.corner;
+    const pertoX = canto.includes('e') ? r.right - e.clientX : e.clientX - r.left;
+    const pertoY = canto.includes('s') ? r.bottom - e.clientY : e.clientY - r.top;
+    return pertoX <= 22 && pertoY <= 22;
+  };
+
+  pane.querySelectorAll('.pane-resize-corner').forEach((quina) => {
+    quina.addEventListener('pointerdown', (e) => {
+      if (!aceitaInicio(quina, e)) return;
+      iniciar(e, quina.dataset.corner);
+    });
+    quina.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const view = Storage.get('roomView', {});
+      delete view[CAM_FLOAT_W_KEY];
+      Storage.set('roomView', view);
+      pane.style.removeProperty('width');
+      pane.style.removeProperty('left');
+      pane.style.removeProperty('top');
+      positionFloatingCamera();
+    });
+  });
+}
+
+function renderParticipants() {
+  if (!elements.participantsList) return;
+
+  elements.participantCount.textContent = state.participants.size;
+
+  elements.participantsList.innerHTML = state.order.map(id => {
+    const p = state.participants.get(id);
+    if (!p) return '';
+
+    const isSelf = id === state.sessionId;
+    const flags = flagsOf(id);
+    const peer = state.peers.get(id);
+    const active = !state.view.grid && id === state.view.sessionId; // na visão em blocos ninguém fica marcado
+
+    let sub;
+    let live = false;
+    const conn = connectionLabel(id);
+    if (conn) {
+      sub = conn;
+    } else if (flags.screen && flags.camera) {
+      sub = `${ICONS.screen}Tela e câmera`;
+      live = true;
+    } else if (flags.screen) {
+      sub = `${ICONS.screen}Compartilhando tela`;
+      live = true;
+    } else if (flags.camera) {
+      sub = `${ICONS.camera}Câmera ligada`;
+      live = true;
+    } else {
+      sub = 'Só áudio';
+    }
+
+    const locallyMuted = !!peer?.localMuted;
+    const alvoMuteState = id === state.sessionId
+      ? state.muteState
+      : (state.participants.get(id)?.mute_state ?? state.participants.get(id)?.metadata?.mute_state ?? 'UNMUTED');
+    const micIcon = locallyMuted ? ICONS.volumeOff : (flags.deafened ? ICONS.headphonesOff : (flags.mic ? ICONS.mic : ICONS.micOff));
+    const micClass = locallyMuted || flags.deafened || !flags.mic
+      ? (alvoMuteState === 'HOST_MUTED' ? 'muted host-muted' : 'muted')
+      : '';
+    const micTitle = locallyMuted ? 'Silenciado para você'
+      : flags.deafened ? 'Áudio desligado'
+      : flags.mic ? 'Microfone ligado'
+      : alvoMuteState === 'HOST_MUTED' ? 'Silenciado pelo anfitrião'
+      : alvoMuteState === 'SELF_MUTED' ? 'Silenciado pelo participante'
+      : 'Microfone desligado';
+
+    const audioActive = state.audioActive.has(id);
+
+    return `
+      <li class="person ${active ? 'active' : ''}${audioActive ? ' audio-active' : ''}" data-id="${escapeAttr(id)}">
+        <button class="person-main" type="button" data-select="${escapeAttr(id)}" aria-current="${active}">
+          ${avatarHtml(p)}
+          <span class="person-text">
+            <span class="person-name-row">
+              <span class="person-name">${escapeHtml(p.display_name || 'Jogador')}${isSelf ? ' (você)' : ''}</span>
+              ${p.session_id === state.hostSessionId ? '<span class="host-badge" title="Anfitrião da sala">anfitrião</span>' : ''}
+            </span>
+            <span class="person-sub ${live ? 'is-live' : ''}">${sub}</span>
+          </span>
+        </button>
+        <span class="person-mic ${micClass}" title="${micTitle}">${micIcon}</span>
+        <button class="icon-btn person-more" type="button" data-menu="${escapeAttr(id)}" aria-label="Mais opções" aria-haspopup="menu">${ICONS.more}</button>
+      </li>`;
+  }).join('');
+
+  renderAdminControls();
+}
+
+// ---- Menu "..." -----------------------------------------------------------
+let menuFor = null;
+
+function openPersonMenu(sessionId, anchor) {
+  if (menuFor === sessionId && !elements.personMenu.hidden) {
+    closePersonMenu();
+    return;
+  }
+
+  const isSelf = sessionId === state.sessionId;
+  const flags = flagsOf(sessionId);
+  const peer = state.peers.get(sessionId);
+  menuFor = sessionId;
+
+  const items = [
+    `<button role="menuitem" data-act="camera" ${flags.camera ? '' : 'disabled'}>${ICONS.camera}Ver vídeo</button>`,
+    `<button role="menuitem" data-act="screen" ${flags.screen ? '' : 'disabled'}>${ICONS.screen}Ver tela</button>`
+  ];
+  if (!isSelf) {
+    items.push(peer?.localMuted
+      ? `<button role="menuitem" data-act="unmute">${ICONS.volume}Voltar a ouvir</button>`
+      : `<button role="menuitem" data-act="mute">${ICONS.volumeOff}Silenciar para mim</button>`);
+  }
+    if (state.isHost) {
+      // Só o mute de origem HOST pode ser desfeito pelo host. SELF_MUTED
+      // pertence ao participante: a opção aparece desabilitada.
+      const alvo = state.participants.get(sessionId);
+      const alvoMute = alvo?.mute_state ?? alvo?.metadata?.mute_state ?? 'UNMUTED';
+      if (alvoMute === 'SELF_MUTED') {
+        items.push(`<button role="menuitem" data-act="admin-mute" disabled>${ICONS.micOff}Silenciado pelo participante</button>`);
+      } else if (alvoMute === 'HOST_MUTED') {
+        items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.mic}Ativar microfone</button>`);
+      } else {
+        items.push(`<button role="menuitem" data-act="admin-mute">${ICONS.micOff}Silenciar microfone</button>`);
+      }
+      items.push(`<button role="menuitem" data-act="admin-camera" ${flags.camera ? '' : 'disabled'}>${ICONS.camera}Desligar câmera</button>`);
+      items.push(`<button role="menuitem" data-act="admin-kick">${ICONS.headphonesOff}Remover</button>`);
+    }
+  elements.personMenu.innerHTML = items.join('');
+  elements.personMenu.hidden = false;
+
+  const rect = anchor.getBoundingClientRect();
+  const menuRect = elements.personMenu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(rect.right - menuRect.width, window.innerWidth - menuRect.width - 8));
+  const top = rect.bottom + 6 + menuRect.height > window.innerHeight
+    ? Math.max(8, rect.top - menuRect.height - 6)
+    : rect.bottom + 6;
+  elements.personMenu.style.left = `${left}px`;
+  elements.personMenu.style.top = `${top}px`;
+}
+
+function closePersonMenu() {
+  if (!elements.personMenu) return;
+  elements.personMenu.hidden = true;
+  menuFor = null;
+}
+
+function handleMenuClick(e) {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn || btn.disabled || !menuFor) return;
+
+  const id = menuFor;
+  const act = btn.dataset.act;
+  closePersonMenu();
+
+  if (act === 'camera' || act === 'screen') {
+    selectParticipant(id, { tab: act });
+    return;
+  }
+
+  if (act === 'admin-kick') {
+    sendWebSocketMessage('admin-kick', { target_session_id: id });
+    return;
+  }
+  if (act === 'admin-camera') {
+    sendWebSocketMessage('admin-camera', { target_session_id: id });
+    return;
+  }
+  if (act === 'admin-mute') {
+    const alvo = state.participants.get(id);
+    const alvoMute = alvo?.mute_state ?? alvo?.metadata?.mute_state ?? 'UNMUTED';
+    // HOST_MUTED -> liberar; UNMUTED -> silenciar; SELF_MUTED fica bloqueado.
+    sendWebSocketMessage('admin-mute', { target_session_id: id, muted: alvoMute !== 'HOST_MUTED' });
+    return;
+  }
+
+  const peer = state.peers.get(id);
+  if (!peer) return;
+  peer.localMuted = act === 'mute';
+  if (peer.audioEl) peer.audioEl.muted = peer.localMuted || state.deafened;
+  renderAll();
+}
+
+// ============================================
+// Sidebar
+// ============================================
+function showSidePanel(panel) {
+  const isChat = panel === 'chat';
+  elements.panelPeople.hidden = isChat;
+  elements.panelChat.hidden = !isChat;
+  elements.sideTabs.forEach(tab => {
+    const active = tab.dataset.panel === panel;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  if (isChat) {
+    // O usuário abriu o chat: remove o indicador de mensagem nova.
+    state.chatViewed = true;
+    state.chatUnread = 0;
+    updateChatBadge();
+    elements.chatInput?.focus();
+  } else {
+    // Saiu do chat: permite que novas mensagens voltem a mostrar o indicador.
+    state.chatViewed = false;
+  }
+}
+
+// Em telas estreitas a sidebar vira uma gaveta
+function toggleSide(open) {
+  elements.room?.classList.toggle('side-open', !!open);
+}
+
+/** Atualiza o indicador `!` da aba de chat quando há mensagens não lidas. */
+function updateChatBadge() {
+  const tab = document.getElementById('tab-chat');
+  if (!tab) return;
+  const old = tab.querySelector('.chat-notice');
+  if (old) old.remove();
+  if (state.chatUnread > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'chat-notice';
+    badge.setAttribute('aria-label', state.chatUnread === 1 ? '1 mensagem nova' : `${state.chatUnread} mensagens novas`);
+    badge.textContent = '!';
+    tab.appendChild(badge);
+  }
+}
+
+// ============================================
+// Chat
+// ============================================
+// Intervalo mínimo entre uma mensagem e a próxima (anti-spam)
+const CHAT_COOLDOWN_MS = 3000;
+let lastChatSentAt = 0;
+
+function sendChatMessage(e) {
+  e.preventDefault();
+  const message = elements.chatInput?.value.trim();
+  if (!message) return;
+
+  // Anti-spam: exige 3 segundos entre mensagens (o texto fica no campo)
+  const wait = CHAT_COOLDOWN_MS - (Date.now() - lastChatSentAt);
+  if (wait > 0) {
+    Toast.warning(`Aguarde ${Math.ceil(wait / 1000)}s para enviar outra mensagem`);
+    return;
+  }
+  lastChatSentAt = Date.now();
+
+  // Exibe a própria mensagem imediatamente (atualização otimista). O servidor
+  // distribui para os demais participantes mas não envia de volta ao remetente,
+  // evitando que a mensagem apareça duas vezes no chat de quem enviou.
+  appendChatMessage({
+    displayName: state.displayName || 'Você',
+    avatar: state.avatar,
+    content: message,
+    timestamp: new Date(),
+    own: true,
+  });
+
+  // Envia ao servidor de sinalização, que distribui para todos os participantes
+  // da mesma sala. O remetente não é notificado (evita duplicar a própria msg).
+  sendWebSocketMessage('chat-message', { message });
+
+  elements.chatInput.value = '';
+  elements.chatInput.style.height = 'auto';
+  elements.chatInput.style.height = '42px';
+}
+
+// Notificações da sala (avisos no canto + sons) podem ser silenciadas pelo botão do sino
+let notificationsMuted = Storage.get('notificationsMuted', false) === true;
+
+function updateNotifButton() {
+  const btn = elements.toggleNotifBtn;
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', String(notificationsMuted));
+  const label = notificationsMuted ? 'Reativar notificações' : 'Silenciar notificações';
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
+}
+
+function toggleNotifications() {
+  notificationsMuted = !notificationsMuted;
+  Storage.set('notificationsMuted', notificationsMuted);
+  updateNotifButton();
+  Toast.info(notificationsMuted ? 'Notificações silenciadas' : 'Notificações reativadas');
+}
+
+// Aviso no canto da tela; não aparece quando as notificações estão silenciadas
+function notifyRoom(message, duration, options) {
+  if (notificationsMuted) return;
+  Toast.info(message, duration, options);
+}
+
+// Sons das notificações (carregados sob demanda, um Audio por arquivo)
+const notificationSounds = {};
+// Volume dos avisos: reduzido em degraus (0.8, mais 15%, mais 15%)
+const SOUND_VOLUME = 0.35;
+const customSounds = {}; // key -> { url, name }; personalização vem do IndexedDB
+
+async function loadCustomSounds() {
+  try {
+    const saved = await SoundStore.readAll();
+    saved.forEach(({ key, value }) => {
+      if (!SoundStore.defaults[key] || !value?.blob) return;
+      customSounds[key] = {
+        url: URL.createObjectURL(value.blob),
+        name: (value.name || 'Som personalizado').slice(0, 120)
+      };
+    });
+  } catch (e) {
+    Logger.warn('Custom sounds unavailable:', e);
+  }
+}
+
+function playNotificationSound(file = 'message.mp3') {
+  if (notificationsMuted) return;
+  try {
+    const source = SoundStore.resolve(file, customSounds);
+    let audio = notificationSounds[source];
+    if (!audio) {
+      audio = new Audio(source);
+      audio.preload = 'auto';
+      audio.volume = SOUND_VOLUME;
+      notificationSounds[source] = audio;
+    }
+    // Reaplica a cada toque, caso o volume tenha mudado
+    audio.volume = SOUND_VOLUME;
+    audio.currentTime = 0;
+    // O navegador pode bloquear o autoplay antes da primeira interação; ignora o erro
+    audio.play().catch(() => {});
+  } catch (e) {
+    Logger.warn('Notification sound failed:', e);
+  }
+}
+
+/**
+ * Exibe uma mensagem de chat recebida do servidor (ou do próprio remetente,
+ * quando chamada diretamente). O remetente não é notificado; os demais veem
+ * o indicador de mensagem nova se o chat não estiver aberto.
+ */
+function handleChatMessage(payload) {
+  const {
+    from_session_id: fromSessionId,
+    from_participant_id: fromParticipantId,
+    display_name: displayName,
+    avatar_data: avatarData,
+    message,
+    timestamp,
+  } = payload;
+
+  const isOwn = fromSessionId === state.sessionId;
+
+  // Só notifica quem não é o remetente e não está vendo o chat agora.
+  if (!isOwn && !state.chatViewed) {
+    state.chatUnread++;
+    updateChatBadge();
+  }
+
+  // Notificação toast de nova mensagem (exibe remetente, foto e conteúdo truncado)
+  if (!isOwn) {
+    const truncated = message.length > 100 ? message.slice(0, 100) + '…' : message;
+    notifyRoom(truncated, 8000, { title: displayName || 'Jogador', avatar: avatarData });
+    playNotificationSound();
+  }
+
+  appendChatMessage({
+    displayName: displayName || 'Jogador',
+    avatar: avatarData,
+    content: message,
+    timestamp: timestamp ? new Date(timestamp * 1000) : new Date(),
+    own: isOwn,
+  });
+}
+
+function appendChatMessage(data) {
+  const div = document.createElement('div');
+  div.className = `chat-message ${data.own ? 'own' : ''}`;
+
+  const time = data.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const parts = avatarParts(data.avatar, data.displayName);
+
+  div.innerHTML = `
+    <div class="chat-message-header">
+      <div class="user-avatar chat-message-avatar" style="${escapeAttr(parts.style)}">${parts.html}</div>
+      <span class="chat-message-name">${escapeHtml(data.displayName)}</span>
+      <span class="chat-message-time">${time}</span>
+    </div>
+    <div class="chat-message-content">${escapeHtml(data.content)}</div>
+  `;
+
+  elements.chatMessages.appendChild(div);
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+
+  // Animação de entrada só desta mensagem (roda uma vez, não repete ao
+  // trocar de aba como um @keyframes em CSS faria).
+  if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    div.animate(
+      [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 180, easing: 'ease-out' }
+    );
+  }
+}
+
+// ============================================
+// Janela separada (nativa do sistema)
+// ============================================
+// 1) Document Picture-in-Picture (Chrome/Edge 116+): uma janela de verdade do
+//    sistema, sempre por cima, onde cabem vídeo, tela e os botões de mute.
+// 2) Picture-in-Picture comum (Safari, Firefox): janela nativa só com o vídeo
+//    visível; o mute fica pelos controles de mídia do navegador.
+function popoutSupported() {
+  return 'documentPictureInPicture' in window || !!document.pictureInPictureEnabled;
+}
+
+function togglePopout() {
+  if (popout.mode) closePopout();
+  else openPopout();
+}
+
+async function openPopout() {
+  if (popout.mode) return;
+  closeMultiFocus({ immediate: true });
+  if (!state.view.sessionId) {
+    Toast.info('Selecione uma pessoa');
+    return;
+  }
+
+  if ('documentPictureInPicture' in window) {
+    try {
+      await openDocumentPopout();
+      return;
+    } catch (e) {
+      Logger.warn('Document PiP failed, falling back:', e);
+    }
+  }
+  await openVideoPopout();
+}
+
+async function openDocumentPopout() {
+  const win = await window.documentPictureInPicture.requestWindow({ width: 560, height: 400 });
+
+  // A janela nasce vazia: leva junto os estilos da página
+  // (as regras vão inline; folhas de outra origem, como a fonte, entram por link absoluto)
+  [...document.styleSheets].forEach(sheet => {
+    try {
+      const style = win.document.createElement('style');
+      style.textContent = [...sheet.cssRules].map(rule => rule.cssText).join('\n');
+      win.document.head.appendChild(style);
+    } catch (e) {
+      if (!sheet.href) return;
+      const link = win.document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = sheet.href;
+      win.document.head.appendChild(link);
+    }
+  });
+  win.document.documentElement.lang = document.documentElement.lang;
+  win.document.title = state.roomName;
+
+  const host = win.document.createElement('div');
+  host.className = 'room pip-room';
+
+  const bar = win.document.createElement('div');
+  bar.className = 'pip-bar';
+
+  const name = win.document.createElement('span');
+  name.className = 'pip-name';
+  name.textContent = elements.viewingName.textContent;
+
+  const views = win.document.createElement('div');
+  views.className = 'pip-views';
+  const controls = {};
+  [['camera', 'Vídeo'], ['screen', 'Tela']].forEach(([view, label]) => {
+    const b = win.document.createElement('button');
+    b.type = 'button';
+    b.className = 'pip-view';
+    b.textContent = label;
+    b.dataset.view = view;
+    b.addEventListener('click', () => setPopoutView(view));
+    views.appendChild(b);
+  });
+
+  const buttons = win.document.createElement('div');
+  buttons.className = 'pip-buttons';
+  [
+    [elements.toggleMicBtn, toggleMicrophone],
+    [elements.toggleDeafenBtn, toggleDeafen]
+  ].forEach(([source, handler]) => {
+    const clone = source.cloneNode(true);
+    clone.classList.add('pip-btn');
+    clone.addEventListener('click', handler);
+    buttons.appendChild(clone);
+    controls[source.id] = { clone, source };
+  });
+
+  const back = win.document.createElement('button');
+  back.type = 'button';
+  back.className = 'pip-btn pip-back';
+  back.title = 'Fechar';
+  back.setAttribute('aria-label', 'Fechar janela');
+  back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+  back.addEventListener('click', closePopout);
+  buttons.appendChild(back);
+
+  bar.append(name, views, buttons);
+  host.append(elements.stage, bar); // o palco muda de janela; a barra só aparece com o mouse em cima
+  win.document.body.appendChild(host);
+
+  popout.mode = 'document';
+  popout.win = win;
+  popout.host = host;
+  popout.controls = controls;
+  popout.nameEl = name;
+  popout.views = views;
+
+  win.addEventListener('keydown', handleKeyboardShortcuts);
+  win.addEventListener('click', unlockMedia);
+  win.addEventListener('pagehide', () => closePopout({ fromWindow: true }));
+
+  elements.stageCard.classList.add('is-detached');
+  elements.stageDetached.hidden = false;
+  closePersonMenu();
+  renderStage();
+  refreshStageMedia();
+  updateMediaButtons();
+}
+
+async function openVideoPopout() {
+  // Na aba Várias telas, a tela em foco é a candidata natural ao PiP.
+  let candidates;
+  if (isMultiActive()) {
+    const focusId = state.view.multi.focus;
+    candidates = [...multiTiles.entries()]
+      .sort(([a], [b]) => (a === focusId ? -1 : b === focusId ? 1 : 0))
+      .map(([, tile]) => tile);
+  } else {
+    const panes = elements.panes;
+    candidates = state.view.tab === 'screen' ? [panes.screen, panes.camera] : [panes.camera, panes.screen];
+  }
+  const target = candidates.find(p => p.video.srcObject && p.video.readyState >= 1);
+  if (!target || !document.pictureInPictureEnabled) {
+    Toast.warning('Nenhum vídeo para abrir na janela flutuante');
+    return;
+  }
+
+  try {
+    await target.video.requestPictureInPicture();
+  } catch (e) {
+    Logger.warn('Video PiP failed:', e);
+    Toast.error('Não foi possível abrir a janela flutuante');
+    return;
+  }
+
+  popout.mode = 'video';
+  popout.video = target.video;
+  target.video.addEventListener('leavepictureinpicture', () => {
+    popout.mode = null;
+    popout.video = null;
+    updateMediaButtons();
+  }, { once: true });
+  updateMediaButtons();
+}
+
+function closePopout({ fromWindow = false } = {}) {
+  if (!popout.mode) return;
+
+  if (popout.mode === 'video') {
+    if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+    popout.mode = null;
+    popout.video = null;
+    updateMediaButtons();
+    return;
+  }
+
+  // Devolve o palco para a página principal
+  const win = popout.win;
+  popout.mode = null;
+  popout.win = null;
+  popout.host = null;
+  popout.controls = {};
+  popout.nameEl = null;
+  popout.views = null;
+
+  elements.stageCard.insertBefore(elements.stage, elements.stageDetached);
+  elements.stageCard.classList.remove('is-detached');
+  elements.stageDetached.hidden = true;
+
+  if (!fromWindow && win && !win.closed) win.close();
+
+  renderStage();
+  refreshStageMedia();
+  updateMediaButtons();
+}
+
+// Trocar um <video> de documento pode pausá-lo
+function refreshStageMedia() {
+  const videos = [
+    elements.panes.camera.video,
+    elements.panes.screen.video,
+    ...Array.from(multiTiles.values(), tile => tile.video),
+    multiFocus?.video
+  ];
+  videos.forEach(video => {
+    if (video?.srcObject) playMedia(video);
+  });
+}
+
+function setPopoutView(view) {
+  state.view.grid = false;
+  // Os botões Vídeo/Tela da janela flutuante são do modo individual. Sair da
+  // aba não fecha o workspace Várias telas: a seleção continua guardada.
+  if (isMultiActive()) state.view.tab = multiUnderlyingTab();
+  if (view === 'split') {
+    state.view.split = true;
+  } else {
+    state.view.split = false;
+    const id = state.view.sessionId;
+    state.view.tab = view;
+    if (id) state.view.tabPref.set(id, view);
+  }
+  Storage.set('roomView', { split: state.view.split });
+  updateMediaButtons();
+  renderStage();
+}
+
+// Mantém os botões da janela separada iguais aos da página
+function syncPopoutControls() {
+  if (popout.mode !== 'document') return;
+  Object.values(popout.controls).forEach(({ clone, source }) => {
+    clone.setAttribute('aria-pressed', source.getAttribute('aria-pressed'));
+  });
+  const current = activeTab() === 'multi' ? null : (state.view.split ? 'split' : state.view.tab);
+  popout.views?.querySelectorAll('.pip-view').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.view === current));
+  });
+}
+
+// Controles de mídia do navegador (usados também pelo PiP comum)
+function syncMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.setMicrophoneActive?.(!state.media.microphoneMuted);
+    navigator.mediaSession.setCameraActive?.(!state.media.cameraMuted);
+  } catch (e) { /* não suportado */ }
+}
+
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  const set = (action, handler) => {
+    try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) { /* ação não suportada */ }
+  };
+  set('togglemicrophone', toggleMicrophone);
+  set('togglecamera', toggleCamera);
+  set('hangup', leaveRoom);
+}
+
+// ============================================
+// Fullscreen
+// ============================================
+function toggleFullscreen() {
+  const target = elements.stageCard;
+  if (!target) return;
+
+  if (!document.fullscreenElement) {
+    target.requestFullscreen().catch(e => Logger.error('Fullscreen failed:', e));
+  } else {
+    document.exitFullscreen().catch(e => Logger.error('Exit fullscreen failed:', e));
+  }
+}
+
+// ============================================
+// Invite Link
+// ============================================
+// Copia só o código da sala, com o mesmo fallback usado no link
+async function copyRoomCode() {
+  const codigo = state.inviteCode || elements.roomCode?.textContent?.trim() || '';
+  if (!codigo) return;
+  try {
+    await navigator.clipboard.writeText(codigo);
+  } catch (e) {
+    const input = document.createElement('input');
+    input.value = codigo;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+  }
+  Toast.success('Código copiado');
+}
+
+// ============================================
+// Leave Room
+// ============================================
+function leaveRoom() {
+  sendWebSocketMessage('leave', {});
+  cleanup();
+  window.location.href = (window.APP_CONFIG?.baseUrl || '') + '/';
+}
+
+function cleanup() {
+  closePopout();
+  destroyMultiWorkspace();
+
+  stopAudioActivityLoop();
+  Array.from(state.audioMonitors.keys()).forEach(stopAudioMonitor);
+  if (state.audioCtx) {
+    state.audioCtx.close().catch(() => {});
+    state.audioCtx = null;
+    audioContextResumed = false;
+  }
+
+  if (timerHandle) {
+    clearInterval(timerHandle);
+    timerHandle = null;
+  }
+
+  Array.from(state.peers.keys()).forEach(closePeer);
+
+  if (state.localStream) {
+    state.localStream.getTracks().forEach(track => track.stop());
+    state.localStream = null;
+  }
+  if (state.screenStream) {
+    state.screenStream.getTracks().forEach(track => track.stop());
+    state.screenStream = null;
+  }
+
+  if (state.ws) {
+    state.ws.onclose = null;
+    state.ws.close();
+    state.ws = null;
+  }
+
+  navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
+
+  Object.values(customSounds).forEach(({ url }) => {
+    delete notificationSounds[url];
+    URL.revokeObjectURL(url);
+  });
+}
+
+// ============================================
+// Utility Functions
+// ============================================
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text == null ? '' : String(text);
+  return div.innerHTML;
+}
+
+function escapeAttr(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Export for debugging
+window.GamingCallsRoom = { state };
+
+// Depuracao (console): estado e dispositivos da sala
+window.__roomDebug = { state, Devices, Storage };

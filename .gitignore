@@ -1,0 +1,53 @@
+# Logs e dados gerados em execucao
+logs/*
+!logs/.gitkeep
+*.log
+
+# Banco de dados portavel: dados contem senhas e informacoes de usuario - NUNCA versionar
+portable/mariadb/data/
+
+# PHP portavel: php.ini e versionado (extensoes), mas caches locais nao
+portable/php/opcache/
+portable/php/conf.d/
+
+# Sessoes PHP e perfil do WebView2: dados de execucao - nao versionar
+data/sessions/*
+!data/sessions/.gitkeep
+data/webview2/
+
+# Credenciais e segredos - nunca versionar
+.env
+config/local.php
+
+# Dependencias (recriaveis com composer install)
+vendor/
+
+# Instalador de CA gerado por make-guest-installer (especifico do host)
+deploy/ca/dist/
+
+# Artefatos de build e distribuicao
+dist/
+build/sfx-payload.zip
+build/out-test/
+build/sfx-test/
+build/build-info.txt
+build/bootstrap/*.exe
+build/vendor/*.cab
+runtime/webview2/
+
+# Shell compilado e DLLs copiadas para a raiz (gerados por build.ps1)
+/Grape.exe
+/Microsoft.Web.WebView2.Core.dll
+/Microsoft.Web.WebView2.WinForms.dll
+/WebView2Loader.dll
+
+# Arquivos do sistema e do editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# Pacotes compactados gerados
+*.zip

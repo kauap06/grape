@@ -1,0 +1,24 @@
+# Grape Root CA - OpenSSL configuration for the self-signed root certificate.
+# This file holds no secrets and is safe to keep in the repository.
+#
+# Used by generate-root-ca.sh:
+#   openssl req -config deploy/ca/root.cnf -new -x509 -extensions v3_ca ...
+
+[ req ]
+prompt             = no
+distinguished_name = req_distinguished_name
+x509_extensions    = v3_ca
+default_md         = sha256
+
+[ req_distinguished_name ]
+CN = Grape Root CA
+O  = Grape
+OU = Local Development CA
+
+[ v3_ca ]
+# This is a CA certificate, limited to signing leaf (server) certificates.
+# pathlen:0 means it cannot be used to sign another intermediate CA.
+basicConstraints       = critical, CA:TRUE, pathlen:0
+keyUsage                = critical, keyCertSign, cRLSign
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always, issuer:always

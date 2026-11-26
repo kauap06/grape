@@ -1,0 +1,578 @@
+/**
+ * Grape - tema compartilhado (home + sala)
+ * Remapeia os tokens semânticos de main.css; os componentes não usam cor fixa.
+ * Ative com <body class="theme-grape">.
+ */
+
+.theme-grape {
+  --color-bg-primary: #0b0717;
+  --color-bg-secondary: #17122b;
+  --color-bg-tertiary: #1d1736;
+  --color-bg-hover: #271f47;
+  --color-bg-active: #31275a;
+
+  --color-border-subtle: rgba(196, 170, 255, 0.14);
+  --color-border-default: rgba(196, 170, 255, 0.24);
+  --color-border-strong: rgba(196, 170, 255, 0.4);
+  --color-border-focus: #c9a6ff;
+
+  --color-text-primary: #f6f1ff;
+  --color-text-secondary: #cfc5ea;
+  --color-text-muted: #a89fc8;
+
+  --color-accent-primary: #8a3fe0;
+  --color-accent-primary-hover: #9d52f0;
+  --color-accent-fg: #ffffff;
+  --color-accent-secondary: #5fd9a8;
+  --color-online: #4ee3a0;
+
+  --color-brand-1: #b24ff0;
+  --color-brand-2: #5b22c4;
+  --color-glass: rgba(24, 14, 52, 0.58);
+  --color-glass-edge: rgba(190, 140, 255, 0.34);
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  background: #0a0a0f;
+}
+
+.theme-grape ::selection { background: rgba(167, 112, 255, 0.4); }
+.theme-grape .preference-item input[type="checkbox"] { accent-color: var(--color-brand-1); }
+
+/* ---------- Fundo vivo (animado) ---------- */
+.deco { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.blob { position: absolute; display: block; filter: blur(2px); }
+.blob-tl {
+  width: 58vw; max-width: 720px; height: 34vw; max-height: 420px; left: -16vw; top: -18vw;
+  background: linear-gradient(135deg, #b876f0 0%, #6a30d0 100%);
+  border-radius: 58% 42% 62% 38% / 46% 60% 40% 54%; transform: rotate(-8deg);
+  opacity: .55;
+}
+.blob-tr {
+  width: 30vw; max-width: 420px; height: 26vw; max-height: 360px; right: -16vw; top: 6vh;
+  background: linear-gradient(200deg, #6a30d0, #2a1068);
+  border-radius: 50% 50% 40% 60% / 60% 40% 60% 40%; opacity: .4;
+}
+.blob-br {
+  width: 54vw; max-width: 680px; height: 28vw; max-height: 360px; right: 11vw; bottom: -16vw;
+  background: linear-gradient(315deg, #a95bf0 0%, #5a24bf 100%);
+  border-radius: 40% 60% 35% 65% / 58% 42% 58% 42%; transform: rotate(-6deg);
+  opacity: .5;
+}
+.deco-grapes { position: absolute; left: -2vw; bottom: -4vh; width: clamp(130px, 15vw, 240px); height: auto; filter: drop-shadow(0 8px 20px rgba(120, 60, 220, 0.35)); opacity: .9; }
+
+/* Cada blob tem duas animações com durações diferentes (movimento e forma):
+   o laço demora a se repetir e o movimento parece orgânico.
+   Usa `transform` e `border-radius` (compatível com qualquer navegador) e
+   NÃO é desligado por prefers-reduced-motion; para parar, use a opção de
+   desativar animações (body.no-animations). */
+@keyframes blob-move {
+  from { transform: translate3d(0, 0, 0) rotate(var(--rot-from)) scale(1); }
+  to   { transform: translate3d(var(--dx), var(--dy), 0) rotate(var(--rot-to)) scale(var(--ds)); }
+}
+@keyframes blob-morph {
+  from { border-radius: var(--r-from); }
+  to   { border-radius: var(--r-to); }
+}
+
+.blob {
+  will-change: transform, border-radius;
+  animation:
+    blob-move var(--move-t) ease-in-out infinite alternate,
+    blob-morph var(--morph-t) ease-in-out infinite alternate;
+}
+
+.blob-tl {
+  --dx: 9vw;  --dy: 6vw;  --ds: 1.14; --rot-from: -8deg; --rot-to: 2deg;
+  --move-t: 22s; --morph-t: 15s;
+  --r-from: 58% 42% 62% 38% / 46% 60% 40% 54%;
+  --r-to:   42% 58% 38% 62% / 58% 42% 60% 40%;
+  animation-delay: -8s, -4s;
+}
+.blob-tr {
+  --dx: -7vw; --dy: 9vh;  --ds: 1.18; --rot-from: 0deg; --rot-to: -14deg;
+  --move-t: 26s; --morph-t: 18s;
+  --r-from: 50% 50% 40% 60% / 60% 40% 60% 40%;
+  --r-to:   62% 38% 55% 45% / 44% 60% 40% 56%;
+  animation-delay: -15s, -9s;
+}
+.blob-br {
+  --dx: -8vw; --dy: -7vw; --ds: 1.12; --rot-from: -6deg; --rot-to: -16deg;
+  --move-t: 24s; --morph-t: 17s;
+  --r-from: 40% 60% 35% 65% / 58% 42% 58% 42%;
+  --r-to:   56% 44% 52% 48% / 40% 60% 45% 55%;
+  animation-delay: -4s, -12s;
+}
+
+/* Uvas balançam de leve */
+@keyframes grapes-sway {
+  from { transform: rotate(-2deg) translateY(0); }
+  to   { transform: rotate(2deg) translateY(-8px); }
+}
+.deco-grapes {
+  transform-origin: 50% 100%;
+  animation: grapes-sway 9s ease-in-out infinite alternate;
+}
+
+/* Na sala o fundo é mais discreto para não competir com o vídeo */
+.theme-room .deco { opacity: 0; }
+.theme-room .deco-grapes { display: none; }
+.theme-room .blob { animation: none !important; }
+
+/* ---------- Botões, campos, modal e toast (compartilhados) ---------- */
+.theme-grape .btn { min-height: 44px; border-radius: var(--radius-md); padding: 0 var(--space-lg); }
+.theme-grape .btn svg { width: 18px; height: 18px; }
+.theme-grape .btn-primary {
+  background: var(--color-accent-primary);
+  box-shadow: 0 4px 14px -6px rgba(138, 63, 224, 0.45);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+.theme-grape .btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-primary-hover);
+  box-shadow: 0 6px 18px -6px rgba(138, 63, 224, 0.55);
+}
+.theme-grape .btn-primary:active:not(:disabled) { transform: translateY(1px); }
+.theme-grape .btn-secondary { background: rgba(24, 18, 44, 0.6); border-color: rgba(190, 150, 255, 0.25); }
+.theme-grape .btn-secondary:hover:not(:disabled) { background: rgba(24, 18, 44, 0.75); border-color: rgba(190, 150, 255, 0.4); }
+.theme-grape .form-input:focus,
+.theme-grape .form-select:focus { border-color: var(--color-border-focus); box-shadow: 0 0 0 3px rgba(167, 112, 255, 0.18); }
+.theme-grape .form-select { background-color: rgba(8, 4, 22, 0.5); }
+.theme-grape .modal-overlay { background: rgba(6, 4, 12, 0.8); }
+.theme-grape .modal { background: #100c1e; border: 1px solid var(--color-border-default); box-shadow: var(--shadow-lg); }
+.theme-grape .toast { background: #1a142e; border-color: var(--color-border-default); }
+
+/* Ícones decorativos via CSS: os scripts trocam o conteúdo dos botões (spinner/texto) */
+.btn-arrow::after, .btn-create::before {
+  content: ""; width: 20px; height: 20px; flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+.btn-arrow { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E"); }
+.btn-create { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
+.btn-create:disabled::before { display: none; }
+
+/* ==========================================================================
+  Modo compacto: visual minimalista.
+  Some com tudo que é ornamento (blobs, uvas, gradientes, vidro, sombras) e
+  deixa só superfícies chapadas, tipografia menor e espaçamento apertado.
+  ========================================================================== */
+body.is-compact {
+  --min-bg: #0b0a0f;
+  --min-surface: #131118;
+  --min-line: #25222e;
+  /* Textos e bordas neutros: nada de lavanda do tema padrão */
+  --color-text-primary: #e9e6f0;
+  --color-text-secondary: #a6a1b2;
+  --color-text-muted: #7d7889;
+  --color-border-subtle: #221f2b;
+  --color-border-default: #2c2837;
+  --color-border-strong: #3a3547;
+  --color-border-focus: #5b5568;
+  --color-brand-1: #8a3fe0;
+
+  /* Spacing reduzido para compacto */
+  --space-sm: 6px;
+  --space-md: 10px;
+  --space-lg: 14px;
+
+  /* Raio menor para compacto */
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Tipografia mais enxuta */
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+}
+
+body.is-compact.theme-grape { background: var(--min-bg); }
+body.is-compact .deco { display: none; }
+
+body.is-compact .page-home {
+  --pad: 14px; --gap: 10px; --field-h: 38px; --maxw: 900px;
+}
+body.is-compact .main-content { padding-block: 8px 14px; }
+
+/* Marca discreta */
+body.is-compact .logo-mark { width: 28px; filter: none; }
+body.is-compact .logo-text { font-size: 20px; letter-spacing: -0.02em; }
+body.is-compact .logo { gap: 8px; }
+body.is-compact .header-content { padding-top: 12px; }
+body.is-compact .header-nav .btn { border-radius: var(--radius-md); }
+
+/* Superfícies: chapadas, borda de 1px, canto pequeno */
+body.is-compact .profile-card,
+body.is-compact .room-card,
+body.is-compact .tile,
+body.is-compact .panel {
+  background: var(--min-surface);
+  border: 1px solid var(--min-line);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+
+/* Títulos viram rótulos */
+body.is-compact .section-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+}
+body.is-compact .section-title::before { display: none; }
+
+/* Controles chapados */
+body.is-compact .btn { min-height: 36px; border-radius: var(--radius-md); box-shadow: none; }
+body.is-compact .btn-primary {
+  background: var(--color-accent-primary);
+  box-shadow: none;
+}
+body.is-compact .btn-primary:hover:not(:disabled) { background: var(--color-accent-primary-hover); }
+body.is-compact .home-grid .form-input,
+body.is-compact .form-input,
+body.is-compact .form-select {
+  background: #111018;
+  border-radius: var(--radius-md);
+  border-color: var(--min-line);
+}
+body.is-compact .form-input:focus,
+body.is-compact .form-select:focus { box-shadow: none; }
+body.is-compact .has-icon::before { display: none; }
+body.is-compact .has-icon .form-input { padding-left: var(--space-md); }
+
+/* Avatar sem anel nem brilho */
+body.is-compact .avatar-preview {
+  width: 48px;
+  height: 48px;
+  box-shadow: none;
+  font-size: 18px;
+}
+body.is-compact .avatar-upload-btn {
+  border-style: solid;
+  border-color: var(--min-line);
+  border-radius: var(--radius-md);
+  background: transparent;
+}
+
+/* Preferências e interruptor discretos */
+body.is-compact .preferences-grid,
+body.is-compact .preference-switch {
+  background: transparent;
+  border-color: var(--min-line);
+  border-radius: var(--radius-md);
+}
+body.is-compact .preference-switch input:checked + .switch-track { box-shadow: none; }
+/* Interruptor compacto: trilho e botão proporcionais, folga de 2px nas bordas */
+body.is-compact .preference-switch { gap: 8px; padding: 8px 10px; }
+
+body.is-compact .preference-switch input:checked + .switch-track .switch-thumb { transform: translateX(16px); }
+body.is-compact .switch-track { width: 36px; height: 20px; border-radius: var(--radius-full); border: 1px solid #3a3547; background: #3a3547; }
+body.is-compact .switch-thumb { width: 14px; height: 14px; top: 2px; left: 2px; background: var(--color-accent-primary); border-radius: 4px; }
+body.is-compact input:checked + .switch-track { background: var(--color-brand-1); border-color: #3a3547; }
+body.is-compact input:checked + .switch-track .switch-thumb { transform: translateX(16px); background: var(--color-accent-primary); }
+
+/* Modal, toast e divisor sóbrios */
+body.is-compact .modal { border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+body.is-compact .toast { border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
+body.is-compact .modal-overlay { background: rgba(4, 3, 7, 0.8); }
+body.is-compact .divider::before,
+body.is-compact .divider::after { background: var(--min-line); }
+
+
+/* Sala: painel lateral e dock na mesma linguagem */
+body.is-compact .side,
+body.is-compact .dock {
+  background: var(--min-surface);
+  border: 1px solid var(--min-line);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.is-compact .dock-btn,
+body.is-compact .dock-ghost,
+body.is-compact .side-tab { border-radius: var(--radius-md); box-shadow: none; }
+body.is-compact .dock-leave { background: var(--color-accent-danger); border-color: transparent; box-shadow: none; }
+body.is-compact .dock-leave:hover { background: var(--color-accent-danger-hover); }
+body.is-compact .side-tab[aria-selected="true"] { background: var(--min-line); }
+
+body.no-animations *,
+body.no-animations *::before,
+body.no-animations *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Interruptor (home e sala) */
+.preference-switch {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  background: rgba(8, 4, 22, 0.5); border: 1px solid rgba(190, 150, 255, 0.2);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.preference-switch:hover { border-color: rgba(190, 150, 255, 0.4); }
+.preference-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.switch-track {
+  position: relative; flex-shrink: 0;
+  width: 38px; height: 21px;
+  border-radius: var(--radius-full);
+  background: rgba(8, 4, 22, 0.8);
+  border: 1.5px solid rgba(190, 150, 255, 0.45);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.switch-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 13px; height: 13px; border-radius: var(--radius-full);
+  background: var(--color-accent-primary);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.preference-switch input:checked + .switch-track {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px rgba(200, 150, 255, 0.3);
+}
+.preference-switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(17px);
+  background: var(--color-accent-primary);
+}
+.preference-switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+.switch-label { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.switch-label small { color: var(--color-text-muted); font-size: var(--font-size-xs); line-height: 1.3; }
+
+/* ---------- Sala no modo compacto: tudo chapado ---------- */
+/* Os tokens da sala são neutralizados na origem: some o roxo das bordas e
+  dos realces, e os componentes que os usam acompanham sem regra própria. */
+body.is-compact .room {
+  --panel: #14121a;
+  --panel-2: #191721;
+  --panel-3: #201d29;
+  --line: #262330;
+  --line-2: #2f2b3a;
+  --line-strong: #3a3547;
+  --text: #e8e5ef;
+  --text-2: #a5a0b3;
+  --text-3: #7c7789;
+  --accent-soft: #201d29;
+  --accent-border: #332f3e;
+  --accent-text: #efeaf7;
+  --danger-soft: #2a1a1d;
+  --danger-border: #4a2a2f;
+  background: var(--min-bg);
+}
+
+/* Superfícies sem sombra, vidro ou canto grande */
+body.is-compact .stage-card,
+body.is-compact .stage,
+body.is-compact .pane,
+body.is-compact .side-panel,
+body.is-compact .chat-message-content,
+body.is-compact .settings-body .profile-card,
+body.is-compact .dock,
+body.is-compact .dock-main {
+  background: var(--min-surface);
+  border-color: var(--min-line);
+  box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.is-compact .stage-card,
+body.is-compact .side-panel,
+body.is-compact .settings-body .profile-card,
+body.is-compact .dock { border-radius: var(--radius-md); }
+body.is-compact .pane,
+body.is-compact .chat-message-content {
+  background: #16121d;
+  color: #f6f1ff;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+body.is-compact .chat-message.own .chat-message-content {
+  background: #3a3547;
+  color: #f6f1ff;
+}
+
+/* Controles retos e sem brilho */
+body.is-compact .icon-btn,
+body.is-compact .settings-input,
+body.is-compact .chat-input,
+body.is-compact .chat-send,
+body.is-compact .side-tab,
+body.is-compact .dock-btn,
+body.is-compact .dock-ghost,
+body.is-compact .popout-btn,
+body.is-compact .view-tab,
+body.is-compact .mute-all-btn,
+body.is-compact .room-code,
+body.is-compact .modal-close {
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+body.is-compact .icon-btn:hover,
+body.is-compact .side-tab:hover { background: var(--min-line); }
+body.is-compact .dock-btn { background: transparent; border-color: transparent; }
+body.is-compact .dock-btn:hover { background: var(--min-line); border-color: transparent; }
+body.is-compact .dock-btn[aria-pressed="true"] { background: var(--min-line); }
+body.is-compact .dock-leave { background: var(--color-accent-danger); border-color: transparent; box-shadow: none; }
+body.is-compact .dock-leave:hover { background: var(--color-accent-danger-hover); }
+
+/* Cabeçalhos, abas e indicadores sem realce colorido */
+body.is-compact .stage-head,
+body.is-compact .side-head { background: transparent; border-color: var(--min-line); }
+body.is-compact .call-sub,
+body.is-compact .call-status-text,
+body.is-compact .status-dot,
+body.is-compact .person-mic,
+body.is-compact .field-hint,
+body.is-compact .view-tab-label { color: var(--text-2); }
+body.is-compact .status-dot,
+body.is-compact .live-pip,
+body.is-compact .dock-dot { box-shadow: none; }
+body.is-compact .live-pip { background: var(--live); }
+
+/* Aba ativa e item selecionado: apenas o traço neutro */
+body.is-compact .view-tab[aria-selected="true"],
+body.is-compact .side-tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--min-line);
+}
+body.is-compact .view-tab[aria-selected="true"]::after,
+body.is-compact .side-tab.active::after { background: var(--text); }
+body.is-compact .person.active {
+  background: #241e33;
+  border-color: var(--min-line);
+  box-shadow: none;
+}
+
+/* Avatares: cor sólida no lugar do gradiente, mantendo o círculo e o
+   tamanho do modo normal */
+body.is-compact .user-avatar,
+body.is-compact .profile-avatar,
+body.is-compact .chat-message-avatar {
+  background: var(--color-accent-primary);
+  color: #fff;
+  box-shadow: none;
+}
+body.is-compact .profile-avatar { border-radius: 50%; }
+
+/* Modal e campos */
+body.is-compact .modal,
+body.is-compact .modal-footer,
+body.is-compact .settings-tabs { background: var(--min-surface); box-shadow: none; }
+body.is-compact .modal-footer { border-color: var(--min-line); }
+body.is-compact .settings-tab.active { background: var(--min-line); }
+body.is-compact .btn-primary { background: var(--color-accent-primary); box-shadow: none; }
+body.is-compact .btn-secondary { background: var(--min-line); border-color: var(--min-line); box-shadow: none; }
+body.is-compact .switch-track { box-shadow: none; }
+body.is-compact .switch-track { border-radius: 6px; }
+body.is-compact .switch-thumb { border-radius: 4px; }
+
+/* Modal, toast e divisor sóbrios */
+body.is-compact .modal { border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+body.is-compact .toast { border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
+body.is-compact .modal-overlay { background: rgba(4, 3, 7, 0.8); }
+body.is-compact .divider::before,
+body.is-compact .divider::after { background: var(--min-line); }
+
+
+
+/* ---------- Sala no modo compacto: mesma linguagem chapada ---------- */
+body.is-compact .room { background: var(--min-bg); }
+body.is-compact .stage-card,
+body.is-compact .stage,
+body.is-compact .pane,
+body.is-compact .side-panel,
+body.is-compact .chat-message-content,
+body.is-compact .settings-body .profile-card {
+  background: #16121d;
+  color: #f6f1ff;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+body.is-compact .chat-message.own .chat-message-content {
+  background: #3a3547;
+  color: #f6f1ff;
+}
+body.is-compact .stage-card,
+body.is-compact .side-panel,
+body.is-compact .settings-body .profile-card { border-radius: var(--radius-md); }
+body.is-compact .pane {
+  border-radius: var(--radius-sm);
+}
+
+/* Controles da sala: retos e sem brilho */
+body.is-compact .icon-btn,
+body.is-compact .settings-input,
+body.is-compact .chat-input,
+body.is-compact .chat-send,
+body.is-compact .side-tab,
+body.is-compact .swatch {
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+body.is-compact .icon-btn:hover,
+body.is-compact .swatch { outline-offset: 2px; }
+body.is-compact .swatch.selected { outline-color: var(--color-accent-primary); box-shadow: none; }
+
+/* Modal de configurações da sala */
+body.is-compact .modal,
+body.is-compact .settings-tabs,
+body.is-compact .settings-tab { border-radius: var(--radius-md); box-shadow: none; }
+body.is-compact .settings-tab.active { background: var(--min-line); }
+body.is-compact .settings-tab.active::after { display: none; }
+body.is-compact .menu { border-radius: var(--radius-md); box-shadow: none; }
+
+/* Tipografia e espaçamento mais secos */
+body.is-compact .stage-head,
+body.is-compact .side-head { font-size: var(--font-size-xs); }
+body.is-compact .chat-message-avatar { background: var(--color-accent-primary); color: #fff; }
+
+/* Botao de envio de foto do avatar (home e sala) */
+.page-home, .theme-room {
+  --ic-camera: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E");
+}
+.avatar-upload-btn {
+  display: inline-flex; align-items: center; gap: var(--space-sm);
+  padding: 9px 18px 9px 14px;
+  font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  background: rgba(8, 4, 22, 0.55);
+  border: 1px dashed rgba(190, 150, 255, 0.45);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast),
+              background var(--transition-fast), transform var(--transition-fast);
+}
+.avatar-upload-btn:hover {
+  color: var(--color-text-primary);
+  background: rgba(167, 112, 255, 0.14);
+  border-color: var(--color-accent-primary);
+}
+.avatar-upload-btn:active { transform: scale(0.97); }
+.avatar-upload-btn:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 3px;
+}
+.avatar-upload-icon {
+  width: 18px; height: 18px; flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: var(--ic-camera) center / contain no-repeat;
+  mask: var(--ic-camera) center / contain no-repeat;
+}
+.avatar-upload-btn:hover .avatar-upload-icon { color: var(--color-accent-primary); }
+
+/* Quinas de redimensionar a camera: discretas no modo compacto */
+body.is-compact .pane-resize-corner::after {
+  border-color: var(--min-line);
+  border-radius: 2px;
+}
+body.is-compact .pane-resize-corner:hover::after { border-color: var(--color-accent-primary); }
