@@ -5,6 +5,9 @@ WebView2 que inicia o servidor PHP/MariaDB/Caddy incluído e abre a aplicação 
 `https://localhost:8443/`. O aplicativo continua sendo PHP; o shell não reimplementa
 autenticação, salas, WebRTC, WebSocket ou banco de dados.
 
+Detalhes de operação, portas, configuração e arquitetura estão em
+[`docs/REFERENCIA-TECNICA.md`](docs/REFERENCIA-TECNICA.md).
+
 ## 1. Tecnologia escolhida
 
 **WebView2 dentro de um shell WinForms C# 5, com runtime WebView2 fixo incluído.**

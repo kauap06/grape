@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -31,7 +32,8 @@ namespace Grape.Launcher
         public static readonly Color Danger = Color.FromArgb(229, 72, 77);
 
         private static PrivateFontCollection _fonts;
-        private static string _family = "Segoe UI";
+        private static FontFamily _uiFamily;
+        private static FontFamily _boldFamily;
         private static string _mono = "Consolas";
         private static bool _initialized;
 
@@ -56,7 +58,16 @@ namespace Grape.Launcher
                 if (fonts.Families.Length > 0)
                 {
                     _fonts = fonts;
-                    _family = fonts.Families[0].Name;
+                    _uiFamily = fonts.Families[0];
+                    _boldFamily = _uiFamily;
+                    for (int i = 1; i < fonts.Families.Length; i++)
+                    {
+                        if (fonts.Families[i].Name.IndexOf("SemiBold", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            _boldFamily = fonts.Families[i];
+                            break;
+                        }
+                    }
                 }
             }
             catch { }
@@ -64,14 +75,27 @@ namespace Grape.Launcher
 
         public static Font Ui(float size)
         {
-            try { return new Font(_family, size, FontStyle.Regular, GraphicsUnit.Point); }
-            catch { return new Font("Segoe UI", size, FontStyle.Regular, GraphicsUnit.Point); }
+            try
+            {
+                if (_uiFamily != null) return new Font(_uiFamily, size, FontStyle.Regular, GraphicsUnit.Point);
+            }
+            catch { }
+            return new Font("Segoe UI", size, FontStyle.Regular, GraphicsUnit.Point);
         }
 
         public static Font Bold(float size)
         {
-            try { return new Font(_family, size, FontStyle.Bold, GraphicsUnit.Point); }
-            catch { return new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Point); }
+            try
+            {
+                if (_boldFamily != null) return new Font(_boldFamily, size, FontStyle.Regular, GraphicsUnit.Point);
+            }
+            catch { }
+            try
+            {
+                if (_uiFamily != null) return new Font(_uiFamily, size, FontStyle.Bold, GraphicsUnit.Point);
+            }
+            catch { }
+            return new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Point);
         }
 
         public static Font Mono(float size)
@@ -297,6 +321,130 @@ namespace Grape.Launcher
         }
     }
 
+    // Chromium opens a separate top-level window while screen capture is active.
+    // Keep it alive (closing it stops the capture) but remove it from the taskbar
+    // and Alt-Tab, then minimize it.
+    internal sealed class ShareIndicatorHider : IDisposable
+    {
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
+        private const int SW_HIDE = 0;
+        private const int SW_SHOWNOACTIVATE = 4;
+        private const int SW_MINIMIZE = 6;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_FRAMECHANGED = 0x0020;
+        private const string ChromiumWindowClass = "Chrome_WidgetWin_1";
+
+        private readonly Timer _timer;
+        private readonly string _host;
+        private bool _disposed;
+
+        public ShareIndicatorHider(string localUrl)
+        {
+            _host = new Uri(localUrl).Authority;
+            _timer = new Timer();
+            _timer.Interval = 250;
+            _timer.Tick += delegate { Sweep(); };
+            _timer.Start();
+        }
+
+        private void Sweep()
+        {
+            if (_disposed) return;
+            try { EnumWindows(OnWindow, IntPtr.Zero); }
+            catch { }
+        }
+
+        private bool OnWindow(IntPtr hwnd, IntPtr lParam)
+        {
+            if (_disposed) return false;
+            try
+            {
+                StringBuilder className = new StringBuilder(64);
+                if (GetClassName(hwnd, className, className.Capacity) == 0) return true;
+                if (!string.Equals(className.ToString(), ChromiumWindowClass, StringComparison.Ordinal)) return true;
+
+                StringBuilder title = new StringBuilder(512);
+                if (GetWindowText(hwnd, title, title.Capacity) == 0) return true;
+                if (!IsShareIndicator(title.ToString())) return true;
+
+                uint processId;
+                GetWindowThreadProcessId(hwnd, out processId);
+                if (processId == 0) return true;
+                using (Process process = Process.GetProcessById((int)processId))
+                {
+                    if (!string.Equals(process.ProcessName, "msedgewebview2", StringComparison.OrdinalIgnoreCase)) return true;
+                }
+
+                Hide(hwnd);
+            }
+            catch { }
+            return true;
+        }
+
+        private bool IsShareIndicator(string title)
+        {
+            if (string.IsNullOrEmpty(title) || !title.StartsWith(_host, StringComparison.OrdinalIgnoreCase)) return false;
+            return title.IndexOf("compartilhando", StringComparison.OrdinalIgnoreCase) >= 0
+                || title.IndexOf("sharing", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void Hide(IntPtr hwnd)
+        {
+            int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            if ((exStyle & WS_EX_TOOLWINDOW) == 0)
+            {
+                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TOOLWINDOW);
+                SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                ShowWindow(hwnd, SW_HIDE);
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+
+            if (!IsIconic(hwnd)) ShowWindow(hwnd, SW_MINIMIZE);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try { _timer.Stop(); } catch { }
+            try { _timer.Dispose(); } catch { }
+        }
+
+        private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hwnd, int index);
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr hwnd);
+    }
+
     internal sealed class LoadingBar : Control
     {
         private readonly Timer _timer;
@@ -519,6 +667,9 @@ namespace Grape.Launcher
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+        private const int TitleBarHeight = 32;
+        private const int TitleBarLogoSize = 16;
+
         private readonly LauncherContext _context;
         private TableLayoutPanel _shell;
         private Panel _titleBar;
@@ -537,6 +688,7 @@ namespace Grape.Launcher
         private bool _startupInProgress;
         private bool _servicesReady;
         private bool _webViewInitialized;
+        private ShareIndicatorHider _shareIndicatorHider;
         private bool _closing;
         private bool _allowClose;
         private bool _installing;
@@ -568,6 +720,7 @@ namespace Grape.Launcher
             catch { }
 
             BuildShell();
+            _shareIndicatorHider = new ShareIndicatorHider(AppInfo.LocalUrl);
             Shown += OnShown;
             FormClosing += OnFormClosing;
             FormClosed += OnFormClosed;
@@ -584,7 +737,7 @@ namespace Grape.Launcher
             _shell.ColumnCount = 1;
             _shell.RowCount = 2;
             _shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            _shell.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f));
+            _shell.RowStyles.Add(new RowStyle(SizeType.Absolute, TitleBarHeight));
             _shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             _titleBar = new Panel();
@@ -640,7 +793,7 @@ namespace Grape.Launcher
             _logo.MouseDown += TitleMouseDown;
             _titleBar.Controls.Add(_logo);
 
-            _appName = Theme.Label("grape", 13f, Theme.Text, true);
+            _appName = Theme.Label("grape", 11.5f, Theme.Text, true);
             _appName.TextAlign = ContentAlignment.MiddleLeft;
             _appName.MouseDown += TitleMouseDown;
             _titleBar.Controls.Add(_appName);
@@ -682,9 +835,9 @@ namespace Grape.Launcher
             _closeButton.SetBounds(right - 44, 0, 44, height);
             _maxButton.SetBounds(right - 88, 0, 44, height);
             _minButton.SetBounds(right - 132, 0, 44, height);
-            _certButton.SetBounds(Math.Max(16, right - 132 - 12 - 174), Math.Max(0, (height - 30) / 2), 174, 30);
-            _logo.SetBounds(16, Math.Max(0, (height - 24) / 2), 24, 24);
-            _appName.SetBounds(48, 0, 260, height);
+            _certButton.SetBounds(Math.Max(16, right - 132 - 12 - 174), Math.Max(0, (height - 24) / 2), 174, 24);
+            _logo.SetBounds(16, Math.Max(0, (height - TitleBarLogoSize) / 2), TitleBarLogoSize, TitleBarLogoSize);
+            _appName.SetBounds(36, -3, 260, Math.Max(20, height - 6));
         }
 
         private void PaintTitleBar(object sender, PaintEventArgs e)
@@ -1206,6 +1359,7 @@ namespace Grape.Launcher
         private void OnFormClosed(object sender, FormClosedEventArgs e)
         {
             Log.Write("Form closed: reason=" + e.CloseReason);
+            try { if (_shareIndicatorHider != null) _shareIndicatorHider.Dispose(); } catch { }
             try { if (_loading != null) _loading.Stop(); } catch { }
             try { if (_tips != null) _tips.Dispose(); } catch { }
             try { if (_webView != null) _webView.Dispose(); } catch { }
