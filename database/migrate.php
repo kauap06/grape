@@ -64,3 +64,22 @@ if ((int) $col->fetchColumn() === 0) {
 } else {
     echo "Migracoes: rooms.is_locked ja existe" . PHP_EOL;
 }
+
+// O codigo da sala passou a carregar o IPv4 do host. Guardamos tambem o
+// endereco no banco para diagnostico e para uma futura troca de porta/esquema.
+$hostColumns = [
+    'host_address' => "VARCHAR(45) NULL",
+    'host_port' => "SMALLINT UNSIGNED NULL",
+    'host_scheme' => "VARCHAR(8) NULL",
+];
+foreach ($hostColumns as $name => $definition) {
+    $col = $db->prepare(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rooms' AND COLUMN_NAME = ?"
+    );
+    $col->execute([$name]);
+    if ((int) $col->fetchColumn() === 0) {
+        $db->exec("ALTER TABLE `rooms` ADD COLUMN `{$name}` {$definition}");
+        echo "Migracao aplicada: rooms.{$name}" . PHP_EOL;
+    }
+}

@@ -41,8 +41,6 @@ $csrfToken = SessionManager::getCsrfToken();
 $cspNonce = Security::nonce();
 $baseUrl = Url::basePath();
 $wsUrl = Url::websocket((int) Config::get('websocket.port', 8182));
-// Link de convite: abre a página inicial com o código da sala já preenchido
-$joinUrl = Url::inviteBase() . '/?code=' . $room->inviteCode;
 
 // Preferencias salvas no banco para este navegador (fallback do localStorage)
 Preferences::key();
@@ -443,7 +441,6 @@ $prefsJson = json_encode(
                 id: <?= $room->id ?>,
                 name: '<?= htmlspecialchars($room->name, ENT_QUOTES) ?>',
                 inviteCode: '<?= $room->inviteCode ?>',
-                joinUrl: <?= json_encode($joinUrl) ?>,
                 maxParticipants: <?= $room->maxParticipants ?>,
             },
             user: {

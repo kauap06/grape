@@ -166,8 +166,8 @@ $prefsJson = json_encode(
                         <article class="action-card tile" id="join-room-card" aria-label="Entrar na sala">
                             <div class="join-row">
                                 <div class="form-group has-icon ic-hash">
-                                    <label for="invite-code" class="sr-only">Código da sala</label>
-                                    <input type="text" id="invite-code" class="form-input form-input-code" placeholder="Código da sala" maxlength="12" autocomplete="off">
+                                    <label for="invite-code" class="sr-only">Código ou link do convite</label>
+                                    <input type="text" id="invite-code" class="form-input form-input-code" placeholder="Código ou link do convite" maxlength="512" autocomplete="off" spellcheck="false">
                                 </div>
                                 <button type="button" class="btn btn-secondary btn-arrow" id="join-room-btn">Entrar</button>
                             </div>

@@ -4,7 +4,7 @@
  * (câmera e/ou tela de quem está selecionado).
  */
 
-import { Logger, Toast, Modal, Storage, Devices, Utils, API, SoundStore } from './utils.js';
+import { Logger, Toast, Modal, Storage, Devices, Utils, API, SoundStore } from './utils.js?v=20261128';
 
 // ============================================
 // Constantes
@@ -35,13 +35,15 @@ const state = {
   roomId: null,
   roomName: '',
   inviteCode: '',
-  inviteUrl: '',
   maxParticipants: 10,
 
   // User info
   sessionId: '',
   displayName: '',
   avatar: '',
+
+  // Para onde voltar ao sair (a origem local de quem entrou por código remoto).
+  homeUrl: '',
 
   // Moderacao (host = quem criou a sala)
   isHost: false,
@@ -160,21 +162,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.roomId = cfg.room?.id;
     state.roomName = cfg.room?.name || '';
     state.inviteCode = cfg.room?.inviteCode || '';
-    state.inviteUrl = cfg.room?.joinUrl || '';
     state.maxParticipants = cfg.room?.maxParticipants || 10;
     state.sessionId = cfg.user?.sessionId || '';
     state.displayName = cfg.user?.displayName || '';
     state.avatar = cfg.user?.avatar || '';
   }
-  if (!state.inviteUrl) state.inviteUrl = window.location.href;
 
   // O perfil (nome/avatar) fica salvo no navegador; a sessão PHP não o conhece.
+  // Quem chega por um codigo de outro host recebe o nome atual via #name=...
+  let invitedName = '';
+  let invitedHome = '';
+  try {
+    const invitedParams = new URLSearchParams(window.location.hash.slice(1));
+    invitedName = (invitedParams.get('name') || '').trim().slice(0, 50);
+    invitedHome = (invitedParams.get('home') || '').trim();
+  } catch (e) {
+    invitedName = '';
+    invitedHome = '';
+  }
+  try {
+    const home = new URL(invitedHome);
+    if (home.protocol === 'https:' && (home.hostname === 'localhost' || home.hostname === '127.0.0.1')) {
+      state.homeUrl = home.href;
+    }
+  } catch (e) {
+    state.homeUrl = '';
+  }
   const profile = Storage.get('profile', {});
 
   // Modo compacto escolhido na home (ou aqui): aplica o visual minimalista
   // também nesta tela, que compartilha a mesma chave de preferência.
   const uiPrefs = Storage.get('uiPreferences', {});
-  state.displayName = ((profile.displayName || state.displayName || '').trim()) || 'Jogador';
+  state.displayName = ((invitedName || profile.displayName || state.displayName || '').trim()) || 'Jogador';
   state.avatar = serializeAvatar(profile.avatar) || state.avatar;
   state.view.split = !!Storage.get('roomView', {}).split;
   const savedPos = Storage.get('cameraPos', null);
@@ -4460,9 +4479,8 @@ function toggleFullscreen() {
 }
 
 // ============================================
-// Invite Link
+// Invite Code
 // ============================================
-// Copia só o código da sala, com o mesmo fallback usado no link
 async function copyRoomCode() {
   const codigo = state.inviteCode || elements.roomCode?.textContent?.trim() || '';
   if (!codigo) return;
@@ -4485,7 +4503,7 @@ async function copyRoomCode() {
 function leaveRoom() {
   sendWebSocketMessage('leave', {});
   cleanup();
-  window.location.href = (window.APP_CONFIG?.baseUrl || '') + '/';
+  window.location.href = state.homeUrl || (window.APP_CONFIG?.baseUrl || '') + '/';
 }
 
 function cleanup() {

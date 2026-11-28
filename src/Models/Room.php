@@ -7,6 +7,8 @@ namespace GamingCalls\Models;
 
 use GamingCalls\Database\Database;
 use GamingCalls\Config\Config;
+use GamingCalls\Support\RoomCode;
+use GamingCalls\Support\Url;
 
 class Room
 {
@@ -41,14 +43,33 @@ class Room
     public static function create(string $name, string $creatorSessionId, array $options = []): self
     {
         $db = Database::getInstance();
-        $inviteCode = self::generateInviteCode();
         $maxParticipants = $options['max_participants'] ?? Config::get('room.max_participants', 10);
         $settings = $options['settings'] ?? null;
         $expiresAt = $options['expires_at'] ?? null;
 
+        // O codigo antigo era aleatorio e so existia no banco local. O codigo
+        // novo carrega o IPv4 compartilhavel do host, permitindo que outro
+        // computador resolva a sala sem um registro central.
+        $hostAddress = $options['host_address'] ?? Url::hostAddress();
+        $hostPort = null;
+        $hostScheme = null;
+
+        if (is_string($hostAddress) && RoomCode::isShareableIpv4($hostAddress)) {
+            do {
+                $inviteCode = RoomCode::generate($hostAddress);
+            } while (!self::isInviteCodeUnique($inviteCode));
+            $hostPort = RoomCode::PORT;
+            $hostScheme = RoomCode::SCHEME;
+        } else {
+            $hostAddress = null;
+            do {
+                $inviteCode = self::generateInviteCode();
+            } while (!self::isInviteCodeUnique($inviteCode));
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO `rooms` (`name`, `invite_code`, `creator_session_id`, `max_participants`, `settings`, `expires_at`) 
-             VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO `rooms` (`name`, `invite_code`, `creator_session_id`, `max_participants`, `settings`, `expires_at`, `host_address`, `host_port`, `host_scheme`) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $stmt->execute([
             $name,
@@ -57,6 +78,9 @@ class Room
             $maxParticipants,
             $settings ? json_encode($settings) : null,
             $expiresAt,
+            $hostAddress,
+            $hostPort,
+            $hostScheme,
         ]);
 
         $roomId = (int)$db->lastInsertId();
@@ -160,14 +184,6 @@ class Room
         return $this->getActiveParticipantCount() < $this->maxParticipants;
     }
 
-    public function getJoinUrl(string $baseUrl = ''): string
-    {
-        $base = $baseUrl ?: (PHP_SAPI === 'cli'
-            ? Config::get('app.base_url', '')
-            : \GamingCalls\Support\Url::absolute());
-        return rtrim($base, '/') . '/room.php?code=' . $this->inviteCode;
-    }
-
     public function toArray(): array
     {
         return [
@@ -183,7 +199,6 @@ class Room
             'is_active' => $this->isActive,
             'is_locked' => $this->isLocked,
             'participant_count' => $this->getActiveParticipantCount(),
-            'join_url' => $this->getJoinUrl(),
         ];
     }
 }

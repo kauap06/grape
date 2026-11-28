@@ -45,17 +45,68 @@ class Url
     }
 
     /**
-     * Base do link de convite: http://<IP do Radmin>:8181 quando o host o informa
-     * (variável de ambiente RADMIN_IP, definida pelo start-host.bat); senão, a origem da requisição.
+     * IPv4 que outros computadores podem usar para chegar a este host.
+     *
+     * A ordem importa: GRAPE_HOST_IP vem do start-host.bat e é o endereço
+     * compartilhado (Radmin VPN, LAN ou IP público encaminhado). RADMIN_IP é o
+     * fallback/bind local. O Host da requisição é o fallback quando a aplicação
+     * foi aberta diretamente pelo endereço de rede. Loopback e link-local nunca
+     * são compartilhados entre usuários.
+     */
+    public static function hostAddress(): ?string
+    {
+        foreach (['GRAPE_HOST_IP', 'RADMIN_IP'] as $name) {
+            $candidate = trim((string) getenv($name));
+            if (RoomCode::isShareableIpv4($candidate)) {
+                return $candidate;
+            }
+        }
+
+        $requestHost = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+        if (preg_match('/^\[([^\]]+)\]/', $requestHost, $m)) {
+            $requestHost = $m[1];
+        } else {
+            $requestHost = preg_replace('/:\d+$/', '', $requestHost) ?: '';
+        }
+
+        return RoomCode::isShareableIpv4($requestHost) ? $requestHost : null;
+    }
+
+    /**
+     * Base do link de convite: a origem pública (https://<IP>:8443)
+     * quando existe uma interface de rede compartilhável.
      */
     public static function inviteBase(): string
     {
-        $ip = trim((string) getenv('RADMIN_IP'));
-        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
-            $port = (int) ($_SERVER['SERVER_PORT'] ?? 8181) ?: 8181;
-            return 'http://' . $ip . ':' . $port . self::basePath();
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+        // Atrás do Caddy, SERVER_PORT é a porta interna do PHP (8181). O host
+        // público chega em HTTP_HOST, com a porta 8443.
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+        $port = 0;
+        if (preg_match('/:(\d+)$/', $host, $m)) {
+            $port = (int) $m[1];
+            $host = substr($host, 0, -strlen($m[0]));
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_PORT'])) {
+            $port = (int) $_SERVER['HTTP_X_FORWARDED_PORT'];
+        } elseif (!empty($_SERVER['SERVER_PORT'])) {
+            $port = (int) $_SERVER['SERVER_PORT'];
         }
-        return self::absolute();
+
+        $scheme = $https ? 'https' : 'http';
+        $defaultPort = $https ? 443 : 80;
+        if ($port <= 0) {
+            $port = $defaultPort;
+        }
+
+        $sharedHost = self::hostAddress();
+        if ($sharedHost !== null) {
+            $host = $sharedHost;
+        }
+
+        $suffix = $port !== $defaultPort ? ':' . $port : '';
+        return $scheme . '://' . $host . $suffix . self::basePath();
     }
 
     /**

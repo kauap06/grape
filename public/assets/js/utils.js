@@ -41,6 +41,91 @@ const Logger = {
 };
 
 // ============================================
+// Room Code
+// ============================================
+// O servidor gera codigos com o IPv4 do host (prefixo G + 11 caracteres).
+// Decodificar no cliente evita consultar um registro central: o codigo ja
+// diz para qual host a sala deve ser aberta.
+const RoomCode = {
+  PREFIX: 'G',
+  LENGTH: 12,
+  PORT: 8443,
+  ALPHABET: 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
+
+  decode(raw) {
+    const code = String(raw || '').trim().toUpperCase();
+    if (code.length !== this.LENGTH || code[0] !== this.PREFIX) return null;
+
+    let value = 0n;
+    for (let i = 1; i < code.length; i++) {
+      const index = this.ALPHABET.indexOf(code[i]);
+      if (index < 0) return null;
+      value = (value << 5n) | BigInt(index);
+    }
+
+    if ((value & 3n) !== 0n) return null;
+
+    const checksum = Number((value >> 2n) & 31n);
+    const nonce = Number((value >> 7n) & 0xFFFFn);
+    const ip = Number((value >> 23n) & 0xFFFFFFFFn);
+    if (checksum !== this.checksum(ip, nonce)) return null;
+
+    const host = this.intToIpv4(ip);
+    if (!this.isShareableIpv4(host)) return null;
+
+    return {
+      host,
+      port: this.PORT,
+      scheme: 'https',
+      code,
+      url: 'https://' + host + ':' + this.PORT + '/room.php?code=' + encodeURIComponent(code)
+    };
+  },
+
+  joinUrl(info) {
+    return info && info.url ? info.url : '';
+  },
+
+  checksum(ip, nonce) {
+    const bytes = [
+      (ip >>> 24) & 0xFF,
+      (ip >>> 16) & 0xFF,
+      (ip >>> 8) & 0xFF,
+      ip & 0xFF,
+      (nonce >>> 8) & 0xFF,
+      nonce & 0xFF
+    ];
+    let check = 0;
+    bytes.forEach((byte, index) => {
+      check = ((check * 33) + byte + index) & 0x1F;
+    });
+    return check;
+  },
+
+  isShareableIpv4(ip) {
+    if (typeof ip !== 'string') return false;
+    const parts = ip.split('.');
+    if (parts.length !== 4 || parts.some(part => !/^\d{1,3}$/.test(part) || Number(part) > 255)) {
+      return false;
+    }
+    const first = Number(parts[0]);
+    const second = Number(parts[1]);
+    if (first === 0 || first === 127 || first >= 224) return false;
+    if (first === 169 && second === 254) return false;
+    return true;
+  },
+
+  intToIpv4(ip) {
+    return [
+      (ip >>> 24) & 0xFF,
+      (ip >>> 16) & 0xFF,
+      (ip >>> 8) & 0xFF,
+      ip & 0xFF
+    ].join('.');
+  }
+};
+
+// ============================================
 // Event Emitter
 // ============================================
 class EventEmitter {
@@ -792,4 +877,4 @@ const SoundStore = {
 // ============================================
 // Export for modules
 // ============================================
-export { Logger, EventEmitter, Toast, Modal, Storage, API, Devices, Utils, SoundStore };
+export { Logger, EventEmitter, Toast, Modal, Storage, API, Devices, Utils, SoundStore, RoomCode };

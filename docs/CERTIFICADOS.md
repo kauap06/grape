@@ -97,7 +97,7 @@ Pronto! Este PC agora confia no certificado do Grape.
 - Não precisa do `.crt` separado: o certificado do host vai **embutido** no
   `.bat` (variável `GRAPE_CA_B64`).
 - Não precisa de administrador: instala na loja do usuário atual.
-- Depois de instalar, basta abrir o link `https://<IP do Radmin>/?code=...`.
+- Depois de instalar, basta abrir o Grape e digitar o código de 12 caracteres no campo **Entrar**. O código já aponta para o endereço do anfitrião.
 
 Se o arquivo for gerado de novo (porque a CA do host mudou), **reenvie** o
 `install-ca.bat` atualizado aos convidados.

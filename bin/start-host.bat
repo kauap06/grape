@@ -142,6 +142,26 @@ if %MYSQL_ALREADY_RUNNING% EQU 1 (
     )
 )
 
+REM ---- IPs de rede ----
+REM RADMIN_IP e o endereco em que o Caddy escuta (interface local).
+REM GRAPE_HOST_IP e o endereco gravado no codigo da sala (pode ser um IP
+REM publico encaminhado pelo roteador). Eles podem ser diferentes em NAT.
+set "SHARE_IP="
+if defined GRAPE_HOST_IP set "SHARE_IP=%GRAPE_HOST_IP%"
+set "BIND_IP="
+if defined GRAPE_BIND_IP set "BIND_IP=%GRAPE_BIND_IP%"
+set RADMIN_IP=
+if not defined RADMIN_IP for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '26.*' } | Select-Object -First 1).IPAddress"`) do set RADMIN_IP=%%i
+if not defined RADMIN_IP for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1; if ($r) { (Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $r.InterfaceIndex -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress }"`) do set RADMIN_IP=%%i
+if not defined RADMIN_IP (
+    echo AVISO: nenhum IP compartilhavel encontrado; a sala funcionara apenas neste PC.
+    set RADMIN_IP=127.0.0.1
+)
+if not defined BIND_IP set "BIND_IP=%RADMIN_IP%"
+if not defined SHARE_IP set "SHARE_IP=%RADMIN_IP%"
+set "RADMIN_IP=%BIND_IP%"
+set "GRAPE_HOST_IP=%SHARE_IP%"
+
 REM ---- Banco: usuario e schema ----
 if exist "%PROJECT_DIR%\database\bootstrap.php" (
     "%PHP_EXE%" "%PROJECT_DIR%\database\bootstrap.php" >nul 2>&1
@@ -152,14 +172,6 @@ if exist "%PROJECT_DIR%\database\bootstrap.php" (
         exit /b 1
     )
     "%PHP_EXE%" "%PROJECT_DIR%\database\migrate.php" >nul 2>&1
-)
-
-REM ---- IP do Radmin VPN ----
-set RADMIN_IP=
-for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '26.*' } | Select-Object -First 1).IPAddress"`) do set RADMIN_IP=%%i
-if not defined RADMIN_IP (
-    echo AVISO: IP do Radmin VPN nao encontrado.
-    set RADMIN_IP=127.0.0.1
 )
 
 REM ---- Servicos ----
@@ -205,7 +217,7 @@ if exist "%SystemRoot%\System32\curl.exe" (
 echo.
 echo Grape iniciado.
 echo   Neste PC:   https://localhost:8443
-echo   Convidados: https://%RADMIN_IP%:8443
+echo   Convidados: https://%SHARE_IP%:8443
 echo   Certificado: deploy\ca\dist\install-ca.bat
 echo   Logs: %PROJECT_DIR%\logs
 echo.

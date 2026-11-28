@@ -9,9 +9,10 @@
 	skip_install_trust
 }
 
-# Unico ponto exposto na rede (443). PHP e WebSocket escutam apenas em
-# 127.0.0.1 e sao acessados por este proxy.
-https://{$RADMIN_IP:127.0.0.1}:8443, https://localhost:8443 {
+# Unico ponto exposto na rede (8443). PHP e WebSocket escutam apenas em
+# 127.0.0.1 e sao acessados por este proxy. GRAPE_HOST_IP entra como nome do
+# site para o certificado cobrir tambem um IP publico encaminhado no roteador.
+https://{$GRAPE_HOST_IP:localhost}:8443, https://{$RADMIN_IP:127.0.0.1}:8443, https://localhost:8443 {
 	tls internal
 	log
 

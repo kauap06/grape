@@ -23,6 +23,10 @@ CREATE TABLE `rooms` (
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
     -- Sala trancada pelo host: ninguem novo entra
     `is_locked` BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Endereco publico do host, necessario para codigos autoexplicativos.
+    `host_address` VARCHAR(45) NULL,
+    `host_port` SMALLINT UNSIGNED NULL,
+    `host_scheme` VARCHAR(8) NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_invite_code` (`invite_code`),
     INDEX `idx_creator_session` (`creator_session_id`),

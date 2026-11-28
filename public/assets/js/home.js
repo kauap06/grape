@@ -2,7 +2,7 @@
  * Gaming Calls Platform - Home Page Logic
  */
 
-import { Logger, Toast, Modal, Storage, API, Devices, Utils, SoundStore } from './utils.js';
+import { Logger, Toast, Modal, Storage, API, Devices, Utils, SoundStore, RoomCode } from './utils.js?v=20261128';
 
 // ============================================
 // State
@@ -138,7 +138,10 @@ function setupEventListeners() {
   elements.createRoomBtn.addEventListener('click', createRoom);
   elements.joinRoomBtn.addEventListener('click', joinRoom);
   elements.inviteCode.addEventListener('input', (e) => {
-    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // O campo aceita código ou link completo. Não destruir a URL ao colar.
+    const value = e.target.value;
+    if (value.includes('://') || value.includes('/') || value.includes('.') || value.includes(':')) return;
+    e.target.value = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   });
 
   // Link de convite (/?code=ABC123): já preenche o código da sala
@@ -752,12 +755,64 @@ async function resetUserData() {
   setTimeout(() => window.location.reload(), 700);
 }
 
+// Código ou link? Um link leva para o host da sala; um código novo carrega o
+// IPv4 do host. Códigos antigos de 8 caracteres continuam locais.
+function resolveInviteInput(raw) {
+  const value = raw.trim();
+  if (!value) return { type: 'empty' };
+
+  const looksLikeAddress = /^https?:\/\//i.test(value)
+    || (/[./:]/.test(value) && /^[a-z0-9.-]+(?::\d+)?(?:\/|$)/i.test(value));
+  if (!looksLikeAddress) {
+    return { type: 'code', value: value.toUpperCase().replace(/[^A-Z0-9]/g, '') };
+  }
+
+  const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(candidate);
+    if (!/^https?:$/.test(url.protocol)) return { type: 'invalid' };
+    return { type: 'url', value: url.href };
+  } catch {
+    return { type: 'invalid' };
+  }
+}
+
 async function joinRoom() {
-  const inviteCode = elements.inviteCode.value.trim().toUpperCase();
+  const target = resolveInviteInput(elements.inviteCode.value);
   const displayName = elements.displayName.value.trim() || state.displayName || 'Jogador';
-  
+
+  if (target.type === 'empty') {
+    Toast.error('Digite o código da sala');
+    return;
+  }
+  if (target.type === 'invalid') {
+    Toast.error('Link do convite inválido');
+    return;
+  }
+
+  if (target.type === 'url') {
+    window.location.href = target.value;
+    return;
+  }
+
+  const inviteCode = target.value;
   if (!inviteCode) {
     Toast.error('Digite o código da sala');
+    return;
+  }
+
+  // Codigos novos carregam o IPv4 do host. Navegar direto para a origem da
+  // sala evita consultar o banco local (que pertence a outro computador).
+  const remoteRoom = RoomCode.decode(inviteCode);
+  if (remoteRoom) {
+    const params = new URLSearchParams();
+    if (displayName) params.set('name', displayName);
+    // Guarda a origem local para "Sair da sala" não terminar na home do host.
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      params.set('home', location.origin + '/');
+    }
+    const hash = params.toString();
+    window.location.href = RoomCode.joinUrl(remoteRoom) + (hash ? '#' + hash : '');
     return;
   }
   
@@ -787,7 +842,8 @@ async function joinRoom() {
     }
   } catch (e) {
     Logger.error('Join room failed:', e);
-    Toast.error(e.message || 'Não foi possível entrar na sala');
+    const message = e.message || 'Não foi possível entrar na sala';
+    Toast.error(message);
   } finally {
     elements.joinRoomBtn.disabled = false;
     elements.joinRoomBtn.textContent = 'Entrar';

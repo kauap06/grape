@@ -38,7 +38,7 @@ https://localhost:8443
 
 1. Recebem **um único arquivo**: `deploy\ca\dist\install-ca.bat`.
 2. Dão duplo clique (não precisa de administrador).
-3. Abrem o link que o host enviou: `https://<IP do Radmin>/?code=CÓDIGO`.
+3. Abrem o Grape (ou o navegador) e digitam o código de 12 caracteres que o host enviou no campo **Entrar**.
 
 > Sem esse passo o navegador avisa do certificado e o WebSocket `wss://` pode
 > ser recusado — a sala fica em "Reconectando...".
